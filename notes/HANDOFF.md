@@ -189,4 +189,43 @@ DSH(bash) → cb CLI → Unix socket → 原生消息宿主 ←stdio(native mess
   在后台标签上不好测（代码路径本身是标准 CDP）
 - `active` 指向 `chrome://` 页面时所有注入类命令都会失败，报错已明确提示换 tabId
 
+---
+
+# 2026-10-07 上午（第三轮打磨）—— v1.2.0
+
+## 1. DSH 技能（这轮最重要的）
+
+**问题**：桥再强，新会话也不知道 `cb` 存在——每开一个会话都得重新交代一遍。
+
+**解法**：写了 `skill/SKILL.md`，`install.sh` / `./bridge update` 会装到
+`~/.dsh/skills/browser/SKILL.md`。
+
+- skill 根目录（rank 顺序，来自 `dsh-skill-filesystem` 的 README）：
+  100 `<项目>/.dsh/skills` → 200 `<项目>/.agents/skills` → 300 custom →
+  400 `~/.dsh/skills` → 500 `~/.agents/skills` → 600 随包
+- 格式：目录 bundle `<name>/SKILL.md`，YAML frontmatter 必填 `name` + `description`，
+  可选 `whenToUse`；**刻意不支持嵌套 `**/SKILL.md`**
+- **实测：技能目录是热监视的**，写完不用重启 DSH，下一轮会话的
+  `<available_skills>` 里就出现了 `browser`
+- 技能里写进了全部硬规矩（chrome:// 进不去、先查弹窗、先看真实 DOM 再写选择器、
+  点击会自动带光标所以别重复调、用 click-el 别用 el.click()）
+
+## 2. 截图升级
+
+- `cb shot <tab> --full` —— 整页（`captureBeyondViewport`）
+- `cb shot <tab> --sel "<选择器>"` —— 只截元素（`clip` + 先 scrollIntoView）
+
+## 3. 网络记录
+
+- `cb network <tab> [--reload] [--filter 关键词] [--clear]`
+- 环形缓冲 400 条，记 method/status/url/type/耗时/失败原因
+- **坑**：Network 事件只在 attach 之后才产生，所以 `cb network` 会先 attach；
+  想看"这个页面加载了什么"必须 `--reload`（会先清缓冲再刷新再等 2.5s）
+
+## 4. 崩溃恢复实测
+
+杀掉宿主进程 → Chrome 3 秒内重新拉起 → 扩展自动重连 → `cb status` 恢复 ✅
+（扩展侧 `onDisconnect` 800ms 重连 + `chrome.alarms` 30s 保活兜底）
+
+
 

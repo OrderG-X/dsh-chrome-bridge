@@ -8,6 +8,8 @@
 #   ./bridge logs        宿主日志 + 扩展日志
 #   ./bridge test        端到端自检
 #   ./bridge uninstall   卸载
+#
+# 装了 DSH 技能 ~/.dsh/skills/browser/SKILL.md —— 新会话会自动知道 cb 怎么用
 
 set -uo pipefail
 
@@ -30,6 +32,8 @@ case "${1:-help}" in
     cp -R "$REPO/extension/." "$EXT_DIR/"
     cp "$REPO/host/host.js" "$REPO/host/run.sh" "$BRIDGE/host/"
     cp "$REPO/bin/cb" "$CB"
+    mkdir -p "$HOME/.dsh/skills/browser"
+    cp "$REPO/skill/SKILL.md" "$HOME/.dsh/skills/browser/SKILL.md"
     chmod +x "$CB" "$BRIDGE/host/run.sh"
     echo "热重载扩展（v$(repo_ver)）…"
     "$CB" reload 2>/dev/null || echo "  扩展没在跑，下次打开 Chrome 自动加载新代码"

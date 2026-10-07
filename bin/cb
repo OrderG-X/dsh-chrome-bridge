@@ -12,7 +12,8 @@
  *   cb type   <tab> <文字> [--into <选择器>]
  *   cb key    <tab> <按键> [--times N]      例：cb key active Enter / cb key active "meta+a"
  *   cb nav    <tab> <url>
- *   cb shot   [tab] [--out 路径] [--format png|jpeg]
+ *   cb shot   [tab] [--out 路径] [--full 整页] [--sel 选择器] [--format png|jpeg]
+ *   cb network [tab] [--limit 40] [--filter 关键词] [--reload 先刷新再看] [--clear]
  *   cb cursor <tab> move|click|hide [x] [y]
  *   cb open   <url> / cb close <tab> / cb attach|detach <tab>
  *   cb cdp    <tab> <方法> [json参数]
@@ -317,13 +318,31 @@ async function main() {
       return
     }
     case 'shot': {
-      const tabSpec = rest[0] && !/^\d+$/.test(rest[0]) === false ? rest[0] : rest[0]
       const tabId = await resolveTab(rest[0])
       const format = flags.format === 'jpeg' ? 'jpeg' : 'png'
-      const r = await call('shot', { tabId, format, quality: flags.quality ? Number(flags.quality) : undefined })
+      const r = await call('shot', {
+        tabId, format,
+        quality: flags.quality ? Number(flags.quality) : undefined,
+        full: !!flags.full,
+        selector: flags.sel || undefined,
+      })
       const file = String(flags.out || `/tmp/dsh-shot-${Date.now()}.${format === 'jpeg' ? 'jpg' : 'png'}`)
       fs.writeFileSync(file, Buffer.from(r.data, 'base64'))
-      out(file, { file, format, url: r.url, title: r.title, bytes: fs.statSync(file).size })
+      out(file, { file, format, url: r.url, title: r.title, bytes: fs.statSync(file).size, full: r.full, clip: r.clip })
+      return
+    }
+    case 'network': {
+      const tabId = rest[0] ? await resolveTab(rest[0]) : undefined
+      const r = await call('network', {
+        tabId, limit: Number(flags.limit || 40), filter: flags.filter || undefined,
+        clear: !!flags.clear, reload: !!flags.reload,
+      })
+      if (r.cleared) { out('已清空网络记录', r); return }
+      const lines = r.items.map(n => {
+        const mark = n.failed ? '✗' : String(n.status || '…')
+        return `${mark.padStart(3)} ${String(n.method).padEnd(6)} ${String(n.ms ?? '').padStart(6)}ms ${String(n.url).slice(0, 88)}`
+      })
+      out(lines.join('\n') || '(还没记录到请求；先让页面动起来)', r)
       return
     }
     case 'cursor': {

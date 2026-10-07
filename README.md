@@ -62,14 +62,23 @@ cb dialog active accept                    # 放行 alert/confirm（否则页面
 
 cb nav    active https://example.com
 cb shot   active --out /tmp/x.png          # 截图（页内光标会一起入镜）
-cb cursor active click 400 300             # 页内光标：move / click / hide
+cb shot   active --full                    # 整页
+cb shot   active --sel "svg"               # 只截某个元素
 cb console active                          # 页面 console
+cb network active --reload                 # 网络请求（谁 404 了、谁慢）
+cb cursor active click 400 300             # 页内光标：move / click / hide
 cb cdp    active Page.reload '{}'          # 原始 CDP 逃生口
 cb reload / cb version                     # 热重载 / 看扩展版本
 ```
 
 `active` 可以换成具体 tabId。任何命令加 `--json` 出原始 JSON。
 **点击和输入默认会带动页内光标**（飞过去 → 涟漪 → 真点击），加 `--no-cursor` 关掉。
+
+## DSH 技能
+
+`install.sh` 会装一个 `browser` 技能到 `~/.dsh/skills/browser/SKILL.md`，
+所以**新会话自己就知道 `cb` 怎么用**，不用你每次交代。
+改技能内容：编辑 `skill/SKILL.md` 后跑 `./bridge update`（技能目录是热监视的，立刻生效）。
 
 ## 为什么自建
 

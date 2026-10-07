@@ -25,19 +25,20 @@ if [ "${1:-}" = "--uninstall" ]; then
   rm -f /tmp/dsh-bridge.sock /tmp/dsh-bridge.token
   rm -rf "$BRIDGE" "$EXT_DIR"
   rm -f "$HOME/.dsh/bin/cb"
+  rm -rf "$HOME/.dsh/skills/browser"
   echo "已卸载：注册文件 / 宿主目录 / 扩展目录 / cb 都清了"
   echo "Chrome 里的扩展请自己去 chrome://extensions 删掉（DSH Bridge）"
   exit 0
 fi
 
-echo "==> 1/4 安装宿主到 $BRIDGE"
+echo "==> 1/5 安装宿主到 $BRIDGE"
 mkdir -p "$BRIDGE/host" "$EXT_DIR" "$HOME/.dsh/bin" "$HOME/.dsh/chrome-cursor"
 cp -R "$REPO/extension/." "$EXT_DIR/"
 cp "$REPO/host/host.js" "$REPO/host/run.sh" "$BRIDGE/host/"
 cp "$REPO/scratch/in-page-cursor.js" "$HOME/.dsh/chrome-cursor/in-page-cursor.js" 2>/dev/null || true
 chmod +x "$BRIDGE/host/run.sh"
 
-echo "==> 2/4 算扩展 ID（从 manifest 里的 key 推导，永久固定）"
+echo "==> 2/5 算扩展 ID（从 manifest 里的 key 推导，永久固定）"
 EXT_ID="$(python3 - "$EXT_DIR/manifest.json" <<'PY'
 import base64, hashlib, json, sys
 key = json.load(open(sys.argv[1]))["key"]
@@ -48,7 +49,7 @@ PY
 )"
 echo "    扩展 ID: $EXT_ID"
 
-echo "==> 3/4 注册原生消息宿主"
+echo "==> 3/5 注册原生消息宿主"
 mkdir -p "$NM_DIR"
 cat > "$NM_FILE" <<JSON
 {
@@ -61,9 +62,14 @@ cat > "$NM_FILE" <<JSON
 JSON
 echo "    $NM_FILE"
 
-echo "==> 4/4 装 cb CLI"
+echo "==> 4/5 装 cb CLI"
 cp "$REPO/bin/cb" "$HOME/.dsh/bin/cb"
 chmod +x "$HOME/.dsh/bin/cb"
+
+echo "==> 5/5 装 DSH 技能（让新会话自己知道 cb 怎么用）"
+mkdir -p "$HOME/.dsh/skills/browser"
+cp "$REPO/skill/SKILL.md" "$HOME/.dsh/skills/browser/SKILL.md"
+echo "    ~/.dsh/skills/browser/SKILL.md"
 
 cat <<EOF
 
@@ -76,6 +82,8 @@ cat <<EOF
       （路径：${EXT_DIR}）
 
    4. 装完不用点任何东西，直接跑：cb status
+
+   新会话会自动带一个 browser 技能，知道怎么用 cb。
 
    （扩展 ID 是 ${EXT_ID}，已经绑进注册文件了）
 EOF

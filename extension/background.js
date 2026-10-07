@@ -29,6 +29,10 @@ const LOG = []
 const CONSOLE = []
 /** 被 alert/confirm 挡住的标签页：tabId → {type, message} */
 const dialogs = new Map()
+/** 网络请求环形缓冲（Network 域在 attach 时就 enable 了） */
+const NET = []
+const netPending = new Map()
+const NET_MAX = 400
 
 function log(...args) {
   const line = new Date().toISOString().slice(11, 19) + ' ' + args.map(a =>
@@ -166,6 +170,26 @@ chrome.debugger.onEvent.addListener((src, method, params) => {
   }
   if (method === 'Page.javascriptDialogClosed') {
     dialogs.delete(src.tabId)
+  }
+  if (method === 'Network.requestWillBeSent') {
+    netPending.set(params.requestId, {
+      tabId: src.tabId, method: params.request.method, url: params.request.url,
+      type: params.type, at: Date.now(),
+    })
+  }
+  if (method === 'Network.responseReceived') {
+    const p = netPending.get(params.requestId)
+    if (p) { p.status = params.response.status; p.mime = params.response.mimeType }
+  }
+  if (method === 'Network.loadingFinished' || method === 'Network.loadingFailed') {
+    const p = netPending.get(params.requestId)
+    if (p) {
+      p.ms = Date.now() - p.at
+      if (method === 'Network.loadingFailed') p.failed = params.errorText
+      NET.push(p)
+      if (NET.length > NET_MAX) NET.shift()
+      netPending.delete(params.requestId)
+    }
   }
   if (method === 'Runtime.consoleAPICalled') {
     const text = (params.args || []).map(a =>
@@ -571,13 +595,49 @@ const OPS = {
     return { pressed: key, times, modifiers: out[0] && out[0].modifiers }
   },
 
-  async shot({ tabId, format = 'png', quality }) {
+  async shot({ tabId, format = 'png', quality, full = false, selector }) {
     await ensure(tabId)
-    const params = { format, captureBeyondViewport: false }
+    const params = { format, captureBeyondViewport: !!full }
     if (format === 'jpeg' && quality) params.quality = quality
+    let clip = null
+    if (selector) {
+      const rect = await evaluate(tabId, `(() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) return null;
+        el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+        return new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(() => {
+          const r = el.getBoundingClientRect();
+          res({ x: r.left, y: r.top, width: r.width, height: r.height });
+        })));
+      })()`)
+      if (!rect) throw new Error(`没找到元素: ${selector}`)
+      clip = { x: rect.x, y: rect.y, width: rect.width, height: rect.height, scale: 1 }
+      params.clip = clip
+      params.captureBeyondViewport = false
+    }
     const r = await send(tabId, 'Page.captureScreenshot', params)
     const t = await chrome.tabs.get(Number(tabId)).catch(() => null)
-    return { data: r.data, format, url: t && t.url, title: t && t.title }
+    return { data: r.data, format, url: t && t.url, title: t && t.title, full: !!full, clip }
+  },
+
+  async network({ tabId, limit = 40, filter, clear, reload = false, waitMs = 2500 }) {
+    if (clear) { NET.length = 0; return { cleared: true } }
+    // Network 事件只在 attach 之后才有，所以先 attach；要历史就 --reload 刷一次
+    if (tabId != null && reload) {
+      await ensure(tabId)
+      NET.length = 0
+      await send(tabId, 'Page.reload', {})
+      await new Promise(r => setTimeout(r, Number(waitMs)))
+    } else if (tabId != null) {
+      await ensure(tabId)
+    }
+    let items = tabId != null ? NET.filter(n => n.tabId === Number(tabId)) : NET
+    if (filter) items = items.filter(n => (n.url || '').includes(filter) || (n.method || '').includes(filter))
+    return {
+      items: items.slice(-limit).map(n => ({
+        method: n.method, status: n.status, url: n.url, type: n.type, ms: n.ms, failed: n.failed,
+      })),
+    }
   },
 
   /** 页内光标：CLI 把脚本内容传进来，这里只负责注入 + 调用 */
