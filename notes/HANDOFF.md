@@ -227,5 +227,62 @@ DSH(bash) → cb CLI → Unix socket → 原生消息宿主 ←stdio(native mess
 杀掉宿主进程 → Chrome 3 秒内重新拉起 → 扩展自动重连 → `cb status` 恢复 ✅
 （扩展侧 `onDisconnect` 800ms 重连 + `chrome.alarms` 30s 保活兜底）
 
+---
+
+# 2026-10-07 上午（第四轮）—— DSH 原生插件
+
+## 做成了什么
+
+`plugin/` 是一个正经的 DSH bundle，装进 profile 后 DSH 多出 9 个原生工具
+（`browser_tabs/read/click/input/nav/screenshot/eval/wait/dialog`），不用再走 bash 调 `cb`。
+
+**传输层刻意做薄**：插件就是个 Unix socket 客户端，协议和 `cb` CLI 一模一样，
+所以插件 / CLI / 宿主 / 扩展四者共用同一份实现，没有第二套逻辑。
+
+## bundle 的写法（官方文档给的，别再猜）
+
+```
+plugin/
+  package.json        # "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+  cordis.patch.yml    # - insert: [ { id, name: '@local/...' } ]
+  index.js            # export function apply(ctx, config) {} / export const inject = ['tools']
+  icon.svg            # package.json 顶层 "icon" 字段（≤256KiB，相对路径）
+```
+
+- 权威文档在 app.asar 里自带：
+  `@deepseek-ai/dsh-agent-preset/skills/cordis-plugin-development/`（SKILL.md + references/）
+- **随包发布的包（`@deepseek-ai/*`）不用声明依赖**，loader 负责解析
+
+## 截图直接给模型看
+
+`output.render` 返回内容块，图片块形状是：
+```js
+{ type: 'image', attachment: ref }   // ref 来自 ctx.attachments.saveImages([{data, mediaType, name}])
+```
+`render` 是同步的，而 `saveImages` 是异步的——所以 execute 里存好 ref、
+把 token 放进返回值，render 再用 token 取回来（`shotRefs` 那个 Map）。
+拿不到 attachments 就退回写文件 + 提示用 `read_image`。
+
+## 踩坑
+
+1. **`dsh plugin add` 对 desktop profile 直接拒绝**：
+   `error: profile "desktop" is managed exclusively by the Electron application`。
+   只能走 GUI 侧栏「插件」→「添加插件」（**接受本地绝对路径**）。
+2. **装完必须重启 DSH**。实测：app 进程 03:38 启动，插件 10:27 装好，
+   package.json / node_modules 软链 / 组合后的 cordis.yml 全都正确，
+   但 app 从没 import 过插件模块（lsof 查不到），新会话里也没有 `browser_*` 工具。
+   结论：新 bundle 不会热加载，别指望 HMR。
+3. **`@deepseek-ai/dsh-tools` 在 profile 上下文里解析不到**（裸 node 实测
+   `ERR_MODULE_NOT_FOUND`）。官方说随包发布的包能从安装目录解析，但为了不让
+   一行 import 把整个插件搞挂，改成动态 import + 等价兜底实现（属性表 → JSON Schema）。
+4. 插件是 `link:` 装的（软链到本仓库），所以改代码不用重装，但要重启才生效。
+
+## 验证插件是否真的活了（不靠猜）
+
+- 组合后的配置：`cp -R` profile 到别的名字再 `--dump-config`，grep 插件 id（CLI 不让 dump desktop 本体）
+- 运行时是否加载：`lsof -p <app pid> | grep 插件路径` + 新会话里看有没有 `browser_*` 工具
+- **工具目录是按会话冻结的**：同一个会话里新装的工具不会中途出现，要新会话
+
+
 
 
