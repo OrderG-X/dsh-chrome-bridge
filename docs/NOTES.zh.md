@@ -328,3 +328,34 @@ browser_nav, browser_read, browser_screenshot, browser_tabs, browser_wait
 
 真调 `browser_tabs` → 读到用户真实 Chrome 的标签页 ✅
 （DSH 工具 → socket → 宿主 → 扩展 → CDP → 真 Chrome 全线打通）
+
+---
+
+# 定位：我们不提供 agent（2026-10-07）
+
+DSH（DeepSeek Harness）本身就是 harness —— agent 循环、模型路由、上下文、工具注册表、
+权限与沙箱，全是它提供的。所以这个项目**不打包任何 agent**，只提供"手"：
+
+- Chrome 扩展 = 手（真实 CDP 事件）
+- 原生宿主 + `cb` = 神经（本地传输）
+- DSH 插件 = 把手的动作注册成 `browser_*` 工具
+- DSH 技能 = 给模型的说明书
+
+**推论（改这个项目时要注意）**：
+
+1. **不要把 agent 逻辑塞进插件。** 不要自己写决策循环、重试策略、上下文压缩、
+   "自动完成多步任务"之类。那是 DSH 的活，塞进去只会和它的循环打架。
+   插件的每个工具应该是**一次明确的动作**，做决定的是模型。
+2. **不要把 DSH 的内部接口当稳定 API。** DSH 现在是 `0.2.0-rc.x`。插件只依赖三个东西：
+   `export function apply(ctx, config)`、`ctx.tools.register(tool)`、`ctx.get('attachments')`。
+   而且**刻意不 import 任何 `@deepseek-ai/*` 包**（profile 里解析不到，一挂就是整个模块挂），
+   工具对象的形状按 dsh-tools 的产出**手搓**。接口要是变了，改一处就行。
+3. **工具名用 `browser_` 前缀**，是通用词。DSH 哪天内置浏览器工具就可能撞名 ——
+   真撞了改前缀即可，但别用 `dsh_` / `chrome_` 这种更像官方占用的前缀。
+4. **装了插件 = 模型操作浏览器不再需要批准。** 插件工具跑在宿主进程里，不走 `bash`
+   那套沙箱/批准（plugin-manager 的 README 也写了："已安装的 Host 代码在宿主进程内运行，
+   不受工作区沙箱限制"）。这不是 bug，是"原生"的代价 —— 但必须写进 README 的安全章节，
+   让用户知道停用插件才是那道闸门。
+5. **技能和工具是两套入口，要同时维护、别互相矛盾。** 技能里写的是 `cb` 命令，
+   装了插件后模型手里是 `browser_*` 工具。所以技能第一段就写"能用工具就用工具"，
+   不然模型会在有工具的情况下绕去 shell，白白多一层转义和进程开销。
