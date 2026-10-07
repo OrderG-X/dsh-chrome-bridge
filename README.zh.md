@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/hero.svg" alt="dsh-chrome-bridge — 让 DSH agent 在你正在用的 Chrome 里动手" width="760" />
+<img src="assets/hero.svg" alt="dsh-chrome-bridge — 让 DSH 的 agent 在你正在用的 Chrome 里动手" width="760" />
 
 <p>
   <a href="https://github.com/OrderG-X/dsh-chrome-bridge/releases"><img src="https://img.shields.io/github/v/release/OrderG-X/dsh-chrome-bridge?label=release&color=4D6BFE" alt="release" /></a>
@@ -21,7 +21,7 @@
 
 ---
 
-**让 DSH agent 在你正在用的 Chrome 里动手**——带你的登录态、你的标签页、你的会话。装一次，永远不用再点 Connect。
+**让 DSH 的 agent 在你正在用的 Chrome 里动手**——带你的登录态、你的标签页、你的会话。装一次，永远不用再点 Connect。
 
 ![页内光标在真实页面上操作](assets/cursor-demo.gif)
 
@@ -47,7 +47,7 @@
 ## 🏗 架构
 
 ```
-DSH agent
+DSH 的 agent（harness 自带，本仓库不提供）
   ├── browser_* 原生工具（DSH 插件） ─┐
   └── cb CLI          （命令行）     ─┤
                                      ▼
@@ -58,6 +58,8 @@ DSH agent
                                                                         ▼
                                                                    真实 CDP
 ```
+
+**本仓库不含 agent** —— 上面那个 agent 是 DSH（harness）自带的，我们只给它一双手。
 
 扩展 ID 由 `extension/manifest.json` 里的公钥固定，所以**每台机器上装的 ID 都一样**，注册文件不用改。
 

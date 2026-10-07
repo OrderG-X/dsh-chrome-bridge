@@ -77,10 +77,10 @@
         font-size="38" font-weight="700" fill="#ffffff" letter-spacing="-0.5">dsh-chrome-bridge</text>
 
   <text x="146" y="116" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-        font-size="14.5" fill="#8b949e">Give a DSH agent hands inside the Chrome you are already using.</text>
+        font-size="14.5" fill="#8b949e">Give your DSH agent hands inside the Chrome you are already using.</text>
 
   <text x="146" y="138" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif"
-        font-size="14.5" fill="#8b949e">让 DSH agent 在你正在用的 Chrome 里动手 —— 带登录态，不新开浏览器。</text>
+        font-size="14.5" fill="#8b949e">让 DSH 的 agent 在你正在用的 Chrome 里动手 —— 带登录态，不新开浏览器。</text>
 
   <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="600">
     <g class="pill">

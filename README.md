@@ -21,7 +21,7 @@
 
 ---
 
-**Give a DSH agent hands inside the Chrome you are already using** — your logins, your tabs, your session. Install once, no Connect button, ever.
+**Give your DSH agent hands inside the Chrome you are already using** — your logins, your tabs, your session. Install once, no Connect button, ever.
 
 ![the in-page cursor driving a real page](assets/cursor-demo.gif)
 
@@ -47,7 +47,7 @@ Three things make the difference:
 ## 🏗 Architecture
 
 ```
-DSH agent
+DSH's agent  (provided by the harness — this repo ships none)
   ├── browser_* tools  (DSH plugin)  ─┐
   └── cb CLI           (shell)       ─┤
                                       ▼
@@ -58,6 +58,8 @@ DSH agent
                                                                             ▼
                                                                        real CDP
 ```
+
+**This repo ships no agent** — the agent above is DSH's own; we only give it hands.
 
 The extension ID is fixed by the public key embedded in `extension/manifest.json`, so it is **identical on every machine** and the native-host registration never needs editing.
 
