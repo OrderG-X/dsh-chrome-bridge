@@ -153,3 +153,40 @@ DSH(bash) → cb CLI → Unix socket → 原生消息宿主 ←stdio(native mess
 - **CLI 用 `sock.end()` 收尾进程不退出**（对端不关连接，句柄一直挂着），改 `sock.destroy()`
   + `process.exit(0)`
 
+---
+
+# 2026-10-07 上午（第二轮打磨）—— v1.1.0
+
+## 新增
+
+- **点击/输入自动带动页内光标**：`click` / `click-el` / `click-text` / `type --into`
+  会先让光标飞过去（0.45s 缓动）、冒个"点击 XX"小标签、再发真实鼠标事件。
+  这才是"看得见"的完整闭环——以前只有显式 `cb cursor` 才有光标。
+  加 `--no-cursor` 可关。
+- **读取类操作**：`text` / `html` / `attr` / `info` / `wait-for`
+- **输入类操作**：`hover` / `scroll` / `focus` / `select` / `upload`（走 `DOM.setFileInputFiles`）
+- **弹窗处理**：`Page.javascriptDialogOpening` 会被记下来，`cb info` 会警告
+  "有 alert 挡着"，`cb dialog accept|dismiss` 放行。**不处理的话页面会一直卡住**
+  （Runtime.evaluate 会挂到超时）——这是浏览器自动化最常见的坑
+- **报错人话化**：`friendly()` 把 CDP 英文错误翻成中文提示
+  （chrome:// 内部页 / 标签页已关 / DevTools 占着调试器 / 上下文丢失 / 没有弹窗）
+- 光标脚本升级：按压缩放（CSS `scale` 独立属性，不打架 translate）、标签气泡、`version:2`
+
+## 实测
+
+- `text` / `wait-for` / `hover` / `scroll` / `attr` / `info`（含视口）/ `click-el` 全通过
+- 截图验证：页内光标确实出现在点击位置（`/tmp/dsh-polish.png`）
+- 版本流：改 manifest → `./bridge update` → 热重载 → `cb version` 报 1.1.0 ✅
+
+## 又踩一个坑
+
+- **`example.com` 现在没有 `<h1>` 了**（改版成 SVG + `<p>`），拿它当测试靶子会误判
+  `wait-for` 有 bug。测选择器之前先 `cb eval` 看一眼真实 DOM。
+
+## 已知限制
+
+- Chrome 会把后台标签页的 `alert()` 推迟到该标签页获得焦点才弹，所以弹窗路径
+  在后台标签上不好测（代码路径本身是标准 CDP）
+- `active` 指向 `chrome://` 页面时所有注入类命令都会失败，报错已明确提示换 tabId
+
+

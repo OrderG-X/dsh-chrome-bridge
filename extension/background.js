@@ -27,6 +27,8 @@ const inbox = new Map()
 /** SW 日志环（CLI 可读，免得去 chrome://extensions 开控制台） */
 const LOG = []
 const CONSOLE = []
+/** 被 alert/confirm 挡住的标签页：tabId → {type, message} */
+const dialogs = new Map()
 
 function log(...args) {
   const line = new Date().toISOString().slice(11, 19) + ' ' + args.map(a =>
@@ -97,6 +99,24 @@ function post(msg) {
   }
 }
 
+/** 把 CDP 的英文报错翻成人能用的提示 */
+function friendly(e) {
+  const m = String((e && e.message) || e)
+  if (m.includes('chrome://') || m.includes('Cannot access a chrome')) {
+    return new Error('这个标签页是 chrome:// 内部页，浏览器禁止注入。用 cb tabs 挑一个 http/https 的标签页')
+  }
+  if (m.includes('No tab with id')) return new Error('标签页已经不存在了（可能被关掉了）')
+  if (m.includes('Another debugger is already attached') || m.includes('Cannot attach')) {
+    return new Error('这个标签页被别的调试器占着（多半是 DevTools 开着）——关掉 DevTools 再试')
+  }
+  if (m.includes('Detached while handling command') || m.includes('Debugger is not attached')) {
+    return new Error('调试会话断了（页面刚导航过？）——重试一次')
+  }
+  if (m.includes('Cannot find context with specified id')) return new Error('页面刚跳转过，执行上下文没了——重试一次')
+  if (m.includes('No dialog is showing')) return new Error('当前没有弹窗挡着（可能被 Chrome 推迟到标签页获得焦点时才弹）')
+  return e instanceof Error ? e : new Error(m)
+}
+
 async function handle(msg) {
   if (!msg || !msg.op) return
   const { id, op, args = {} } = msg
@@ -106,7 +126,7 @@ async function handle(msg) {
     const result = await fn(args)
     post({ id, ok: true, result })
   } catch (e) {
-    post({ id, ok: false, error: String(e && e.message || e) })
+    post({ id, ok: false, error: friendly(e).message })
   }
 }
 
@@ -137,8 +157,15 @@ chrome.debugger.onDetach.addListener((src) => {
 
 chrome.debugger.onEvent.addListener((src, method, params) => {
   if (method === 'Page.loadEventFired') {
+    cursorReady.delete(src.tabId)
     const w = loadWaiters.get(src.tabId)
     if (w) { loadWaiters.delete(src.tabId); clearTimeout(w.timer); w.resolve() }
+  }
+  if (method === 'Page.javascriptDialogOpening') {
+    dialogs.set(src.tabId, { type: params.type, message: params.message, at: Date.now() })
+  }
+  if (method === 'Page.javascriptDialogClosed') {
+    dialogs.delete(src.tabId)
   }
   if (method === 'Runtime.consoleAPICalled') {
     const text = (params.args || []).map(a =>
@@ -192,10 +219,47 @@ async function pointOf(tabId, finderJs) {
   return pt
 }
 
+/** 页内光标：注入过一次就记住，导航后失效要重注 */
+const cursorReady = new Set()
+
+async function injectCursor(tabId, script) {
+  if (!script) return false
+  if (!cursorReady.has(Number(tabId))) {
+    await evaluate(tabId, script)
+    cursorReady.add(Number(tabId))
+  }
+  return true
+}
+
+async function paintCursor(tabId, script, x, y, text) {
+  if (!(await injectCursor(tabId, script))) return false
+  try {
+    await evaluate(tabId, `window.__dshCursor.move(${Math.round(x)}, ${Math.round(y)})`)
+    if (text) await evaluate(tabId, `window.__dshCursor.label(${JSON.stringify(text)})`)
+  } catch {}
+  return true
+}
+
+async function flashCursor(tabId, x, y) {
+  if (!cursorReady.has(Number(tabId))) return
+  try {
+    await evaluate(tabId, 'window.__dshCursor.press()')
+    await evaluate(tabId, `window.__dshCursor.click(${Math.round(x)}, ${Math.round(y)})`)
+  } catch {}
+}
+
 async function clickPoint(tabId, x, y, opts = {}) {
   const n = Number(opts.clickCount || 1)
   const button = opts.button || 'left'
   const base = { x: Math.round(x), y: Math.round(y), button, clickCount: n }
+
+  // 先让光标飞过去，人眼看得见，再发真实点击
+  if (opts.cursor && opts.cursor.script) {
+    await paintCursor(tabId, opts.cursor.script, base.x, base.y, opts.cursor.label)
+    await new Promise(r => setTimeout(r, 300))
+    await flashCursor(tabId, base.x, base.y)
+  }
+
   await send(tabId, 'Input.dispatchMouseEvent', { ...base, type: 'mouseMoved', buttons: 0 })
   await new Promise(r => setTimeout(r, 12))
   await send(tabId, 'Input.dispatchMouseEvent', { ...base, type: 'mousePressed', buttons: 1 })
@@ -333,11 +397,11 @@ const OPS = {
     return { url: (t && t.url) || url, title: t && t.title, frameId: r.frameId, waited: !!wait }
   },
 
-  async click({ tabId, x, y, clickCount, button }) {
-    return clickPoint(tabId, x, y, { clickCount, button })
+  async click({ tabId, x, y, clickCount, button, script }) {
+    return clickPoint(tabId, x, y, { clickCount, button, cursor: { script, label: `点击 (${Math.round(x)}, ${Math.round(y)})` } })
   },
 
-  async clickEl({ tabId, selector }) {
+  async clickEl({ tabId, selector, script }) {
     const pt = await pointOf(tabId, `
       const el = document.querySelector(${JSON.stringify(selector)});
       if (!el) return null;
@@ -350,11 +414,11 @@ const OPS = {
       if (!__dsh_visible(target) && !target.getBoundingClientRect().width) return null;
       return __dsh_point(target);
     `)
-    const hit = await clickPoint(tabId, pt.x, pt.y)
+    const hit = await clickPoint(tabId, pt.x, pt.y, { cursor: { script, label: `点击 ${pt.text || pt.tag}` } })
     return { ...hit, target: pt }
   },
 
-  async clickText({ tabId, text, exact = true, index = 0 }) {
+  async clickText({ tabId, text, exact = true, index = 0, script }) {
     const pt = await pointOf(tabId, `
       const want = __dsh_norm(${JSON.stringify(text)});
       const SEL = 'a,button,input,textarea,select,label,summary,[role=button],[role=link],[role=tab],[role=menuitem],[onclick],[contenteditable=true],li,td,th,h1,h2,h3,h4,span,div,p';
@@ -367,15 +431,138 @@ const OPS = {
       const el = hit[Math.min(${Number(index) || 0}, hit.length - 1)];
       return __dsh_point(el);
     `)
-    const hit = await clickPoint(tabId, pt.x, pt.y)
-    return { ...hit, target: pt, matches: undefined }
+    const hit = await clickPoint(tabId, pt.x, pt.y, { cursor: { script, label: `点击 ${pt.text || pt.tag}` } })
+    return { ...hit, target: pt }
   },
 
-  async type({ tabId, text, selector }) {
-    if (selector) await OPS.clickEl({ tabId, selector })
+  async type({ tabId, text, selector, script }) {
+    if (selector) await OPS.clickEl({ tabId, selector, script })
     await ensure(tabId)
     await send(tabId, 'Input.insertText', { text })
     return { typed: text.length, selector: selector || null }
+  },
+
+  // ── 读取类：让模型能"看"页面 ──────────────────────────────────────────────
+
+  async text({ tabId, selector, limit = 8000 }) {
+    const js = selector
+      ? `(() => { const el = document.querySelector(${JSON.stringify(selector)}); return el ? (el.innerText || el.textContent || '') : null })()`
+      : `document.body ? (document.body.innerText || '') : ''`
+    const t = await evaluate(tabId, js)
+    if (t === null) throw new Error(`没找到元素: ${selector}`)
+    const s = String(t)
+    const cut = s.length > limit
+    return { text: cut ? s.slice(0, limit) + `\n…（截断，全文 ${s.length} 字）` : s, length: s.length, truncated: cut }
+  },
+
+  async html({ tabId, selector = 'body', limit = 4000 }) {
+    const t = await evaluate(tabId, `(() => { const el = document.querySelector(${JSON.stringify(selector)}); return el ? el.outerHTML : null })()`)
+    if (t === null) throw new Error(`没找到元素: ${selector}`)
+    const s = String(t)
+    const cut = s.length > limit
+    return { html: cut ? s.slice(0, limit) + `…（截断，全文 ${s.length} 字）` : s, length: s.length, truncated: cut }
+  },
+
+  async attr({ tabId, selector, name }) {
+    const value = await evaluate(tabId, `(() => { const el = document.querySelector(${JSON.stringify(selector)}); return el ? el.getAttribute(${JSON.stringify(name)}) : null })()`)
+    return { selector, name, value }
+  },
+
+  async info({ tabId }) {
+    const t = await chrome.tabs.get(Number(tabId))
+    let viewport = null
+    try {
+      await ensure(tabId)
+      const m = await send(tabId, 'Page.getLayoutMetrics')
+      const v = m.cssVisualViewport
+      viewport = { w: Math.round(v.clientWidth), h: Math.round(v.clientHeight), scrollY: Math.round(v.pageY) }
+    } catch {}
+    return {
+      tabId: Number(tabId), url: t.url, title: t.title, status: t.status,
+      windowId: t.windowId, active: t.active, attached: attached.has(Number(tabId)),
+      viewport, pendingDialog: dialogs.get(Number(tabId)) || null,
+    }
+  },
+
+  async waitFor({ tabId, selector, timeoutMs = 15000, visible = true }) {
+    const deadline = Date.now() + Number(timeoutMs)
+    const js = `(() => {
+      const el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      const st = getComputedStyle(el);
+      const vis = r.width > 0 && r.height > 0 && st.visibility !== 'hidden' && st.display !== 'none';
+      return { found: true, visible: vis, x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), text: (el.innerText || '').trim().slice(0, 60) };
+    })()`
+    let last = null
+    while (Date.now() < deadline) {
+      last = await evaluate(tabId, js)
+      if (last && (!visible || last.visible)) return { ...last, waitedMs: Number(timeoutMs) - (deadline - Date.now()) }
+      await new Promise(r => setTimeout(r, 250))
+    }
+    throw new Error(`等了 ${timeoutMs}ms 还没等到 ${selector}${last ? '（元素在，但不可见）' : ''}`)
+  },
+
+  // ── 输入类 ───────────────────────────────────────────────────────────────
+
+  async hover({ tabId, x, y, selector }) {
+    let px = Number(x) || 0, py = Number(y) || 0, target = null
+    if (selector) {
+      const pt = await pointOf(tabId, `const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; return __dsh_point(el);`)
+      px = pt.x; py = pt.y; target = pt
+    }
+    await send(tabId, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(px), y: Math.round(py), buttons: 0 })
+    return { x: Math.round(px), y: Math.round(py), target }
+  },
+
+  async scroll({ tabId, x = 200, y = 200, deltaY = 600, deltaX = 0 }) {
+    await send(tabId, 'Input.dispatchMouseEvent', {
+      type: 'mouseWheel', x: Math.round(x), y: Math.round(y),
+      deltaX: Math.round(deltaX), deltaY: Math.round(deltaY),
+    })
+    const after = await evaluate(tabId, '({ scrollY: Math.round(window.scrollY), pageHeight: Math.round(document.documentElement.scrollHeight) })')
+    return { deltaY, ...after }
+  },
+
+  async focus({ tabId, selector }) {
+    const ok = await evaluate(tabId, `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.focus(); return document.activeElement === el })()`)
+    if (!ok) throw new Error(`聚焦失败: ${selector}`)
+    return { focused: selector }
+  },
+
+  async select({ tabId, selector, value }) {
+    const r = await evaluate(tabId, `(() => {
+      const el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) return { ok: false, why: '找不到元素' };
+      if (el.tagName !== 'SELECT') return { ok: false, why: '不是 <select> 元素' };
+      const opts = [...el.options];
+      const hit = opts.find(o => o.value === ${JSON.stringify(value)}) || opts.find(o => (o.textContent || '').trim() === ${JSON.stringify(value)});
+      if (!hit) return { ok: false, why: '没有这个选项', options: opts.map(o => o.value).slice(0, 20) };
+      el.value = hit.value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      return { ok: true, value: hit.value, label: (hit.textContent || '').trim() };
+    })()`)
+    if (!r.ok) throw new Error(`选择失败：${r.why}${r.options ? '（可选值：' + r.options.join(', ') + '）' : ''}`)
+    return r
+  },
+
+  async upload({ tabId, selector, files }) {
+    await ensure(tabId)
+    const list = Array.isArray(files) ? files : [files]
+    const { root } = await send(tabId, 'DOM.getDocument', { depth: -1, pierce: true })
+    const { nodeId } = await send(tabId, 'DOM.querySelector', { nodeId: root.nodeId, selector })
+    if (!nodeId) throw new Error(`没找到文件输入框: ${selector}`)
+    await send(tabId, 'DOM.setFileInputFiles', { files: list, nodeId })
+    return { selector, files: list }
+  },
+
+  /** 被 alert/confirm 挡住时用这个放行，否则页面会一直卡住 */
+  async dialog({ tabId, action, text }) {
+    const accept = action !== 'dismiss'
+    await send(tabId, 'Page.handleJavaScriptDialog', { accept, ...(text ? { promptText: text } : {}) })
+    dialogs.delete(Number(tabId))
+    return { action: accept ? 'accept' : 'dismiss' }
   },
 
   async key({ tabId, key, times = 1 }) {

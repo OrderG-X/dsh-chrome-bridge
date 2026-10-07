@@ -39,19 +39,37 @@ DSH(bash) → cb CLI → Unix socket → 原生宿主 ←native messaging→ Chr
 ```bash
 cb tabs                                   # 列标签页（* = 当前活动）
 cb find 关键词                             # 按标题/URL 找
+cb info   active                           # 标题/URL/视口/有没有弹窗挡着
+
+cb text   active                           # 整页可见文字
+cb text   active "article"                 # 指定元素
+cb html   active "form"                    # 外层 HTML
+cb attr   active "a" href
+cb wait-for active "button.submit"         # 等元素出现（默认 15s）
+
 cb eval   active "document.title"          # 页面里跑 JS
 cb click-el   active "button.submit"       # 按选择器点（真实鼠标事件）
 cb click-text active "登录"                # 按文字点
+cb click  active 400 300                   # 按坐标点
 cb type   active "hello" --into "input"    # 输入
 cb key    active Enter                     # 按键；组合键写 "meta+a"
+cb focus  active "#email"
+cb select active "select#city" 杭州
+cb upload active "input[type=file]" ~/a.pdf
+cb hover  active --sel "button"
+cb scroll active --dy 600
+cb dialog active accept                    # 放行 alert/confirm（否则页面会卡住）
+
 cb nav    active https://example.com
 cb shot   active --out /tmp/x.png          # 截图（页内光标会一起入镜）
 cb cursor active click 400 300             # 页内光标：move / click / hide
 cb console active                          # 页面 console
 cb cdp    active Page.reload '{}'          # 原始 CDP 逃生口
+cb reload / cb version                     # 热重载 / 看扩展版本
 ```
 
 `active` 可以换成具体 tabId。任何命令加 `--json` 出原始 JSON。
+**点击和输入默认会带动页内光标**（飞过去 → 涟漪 → 真点击），加 `--no-cursor` 关掉。
 
 ## 为什么自建
 

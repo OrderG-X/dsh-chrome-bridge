@@ -60,12 +60,32 @@ case "${1:-help}" in
     echo "── 1. 连接 ──";      "$CB" status
     echo "── 2. 扩展版本 ──";  "$CB" version
     echo "── 3. 标签页 ──";    "$CB" tabs | head -3
-    echo "── 4. 读当前页标题 ──"
-    TITLE=$("$CB" eval active "document.title" 2>&1 | head -1)
-    echo "$TITLE"
-    echo "── 5. 截图 ──"
-    "$CB" shot active --out /tmp/dsh-selftest.png
-    ls -la /tmp/dsh-selftest.png 2>/dev/null | awk '{print $5" bytes"}'
+
+    # 挑一个 http/https 的标签页（chrome:// 页面 CDP 进不去）
+    TID=$("$CB" tabs --json 2>/dev/null | python3 -c "
+import json,sys
+try: tabs = json.load(sys.stdin)
+except Exception: tabs = []
+ok = [t for t in tabs if t['url'].startswith(('http://','https://'))]
+print(ok[0]['id'] if ok else '')")
+
+    if [ -z "$TID" ]; then
+      echo "── 4-6 跳过：没有可用的 http/https 标签页 ──"
+      exit 0
+    fi
+
+    echo "── 4. 读标题（tab ${TID}）──"
+    "$CB" eval "$TID" "document.title" 2>&1 | head -1
+    echo "── 5. 读正文前 80 字 ──"
+    "$CB" text "$TID" --limit 80 2>&1 | head -3
+    echo "── 6. 截图 + 光标 ──"
+    "$CB" cursor "$TID" move 300 240 >/dev/null 2>&1
+    "$CB" shot "$TID" --out /tmp/dsh-selftest.png >/dev/null 2>&1
+    if [ -f /tmp/dsh-selftest.png ]; then
+      echo "/tmp/dsh-selftest.png  $(wc -c < /tmp/dsh-selftest.png | tr -d ' ') bytes"
+    else
+      echo "截图失败"
+    fi
     ;;
 
   uninstall)

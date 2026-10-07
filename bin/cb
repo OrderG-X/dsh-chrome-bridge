@@ -16,6 +16,17 @@
  *   cb cursor <tab> move|click|hide [x] [y]
  *   cb open   <url> / cb close <tab> / cb attach|detach <tab>
  *   cb cdp    <tab> <方法> [json参数]
+ *   cb text   <tab> [选择器]              页面可见文字（默认整页）
+ *   cb html   <tab> [选择器]              外层 HTML
+ *   cb attr   <tab> <选择器> <属性名>
+ *   cb info   [tab]                       标题/URL/视口/有没有弹窗挡着
+ *   cb wait-for <tab> <选择器> [--timeout ms]
+ *   cb hover  <tab> (--sel <选择器> | <x> <y>)
+ *   cb scroll <tab> [--dy 600] [--dx 0]
+ *   cb focus  <tab> <选择器>
+ *   cb select <tab> <选择器> <值>
+ *   cb upload <tab> <选择器> <文件...>
+ *   cb dialog <tab> accept|dismiss [内容]   放行 alert/confirm/prompt
  *   cb logs / cb console [tab]
  *   cb version / cb reload      （改完扩展代码用它热重载，不用点 Chrome 刷新）
  *
@@ -103,6 +114,11 @@ function cursorScript() {
   throw new Error('找不到 in-page-cursor.js（可用 DSH_CURSOR_JS 指定）')
 }
 
+function cursorArg() {
+  if (flags['no-cursor']) return {}
+  try { return { script: cursorScript() } } catch { return {} }
+}
+
 function out(human, raw) {
   if (JSON_OUT) console.log(JSON.stringify(raw, null, 2))
   else console.log(human)
@@ -177,7 +193,7 @@ async function main() {
       const [tabSpec, x, y] = rest
       if (x === undefined) die('用法: cb click <tab> <x> <y>')
       const tabId = await resolveTab(tabSpec)
-      const r = await call('click', { tabId, x: Number(x), y: Number(y), clickCount: Number(flags.count || 1) })
+      const r = await call('click', { tabId, x: Number(x), y: Number(y), clickCount: Number(flags.count || 1), ...cursorArg() })
       out(`点了 (${r.x}, ${r.y})`, r)
       return
     }
@@ -185,7 +201,7 @@ async function main() {
       const [tabSpec, sel] = rest
       if (!sel) die('用法: cb click-el <tab> <选择器>')
       const tabId = await resolveTab(tabSpec)
-      const r = await call('clickEl', { tabId, selector: sel })
+      const r = await call('clickEl', { tabId, selector: sel, ...cursorArg() })
       out(`点了 ${r.target.tag}「${r.target.text}」 @ (${r.x}, ${r.y})`, r)
       return
     }
@@ -194,7 +210,7 @@ async function main() {
       const text = txt.join(' ')
       if (!text) die('用法: cb click-text <tab> <文字>')
       const tabId = await resolveTab(tabSpec)
-      const r = await call('clickText', { tabId, text, exact: !flags.fuzzy, index: Number(flags.index || 0) })
+      const r = await call('clickText', { tabId, text, exact: !flags.fuzzy, index: Number(flags.index || 0), ...cursorArg() })
       out(`点了 ${r.target.tag}「${r.target.text}」 @ (${r.x}, ${r.y})`, r)
       return
     }
@@ -202,7 +218,7 @@ async function main() {
       const [tabSpec, ...txt] = rest
       const text = txt.join(' ')
       const tabId = await resolveTab(tabSpec)
-      const r = await call('type', { tabId, text, selector: flags.into || undefined })
+      const r = await call('type', { tabId, text, selector: flags.into || undefined, ...cursorArg() })
       out(`输入了 ${r.typed} 个字符`, r)
       return
     }
@@ -212,6 +228,92 @@ async function main() {
       const tabId = await resolveTab(tabSpec)
       const r = await call('key', { tabId, key, times: Number(flags.times || 1) })
       out(`按了 ${key}${r.times > 1 ? ` ×${r.times}` : ''}`, r)
+      return
+    }
+    case 'text': {
+      const [tabSpec, sel] = rest
+      const tabId = await resolveTab(tabSpec)
+      const r = await call('text', { tabId, selector: sel || undefined, limit: Number(flags.limit || 8000) })
+      out(r.text, r)
+      return
+    }
+    case 'html': {
+      const [tabSpec, sel] = rest
+      const tabId = await resolveTab(tabSpec)
+      const r = await call('html', { tabId, selector: sel || 'body', limit: Number(flags.limit || 4000) })
+      out(r.html, r)
+      return
+    }
+    case 'attr': {
+      const [tabSpec, sel, name] = rest
+      if (!sel || !name) die('用法: cb attr <tab> <选择器> <属性名>')
+      const tabId = await resolveTab(tabSpec)
+      const r = await call('attr', { tabId, selector: sel, name })
+      out(r.value === null ? '(没有这个属性)' : String(r.value), r)
+      return
+    }
+    case 'info': {
+      const tabId = await resolveTab(rest[0])
+      const r = await call('info', { tabId })
+      const v = r.viewport ? ` | 视口 ${r.viewport.w}×${r.viewport.h} @${r.viewport.scrollY}` : ''
+      const d = r.pendingDialog ? ` | ⚠️ 有 ${r.pendingDialog.type} 弹窗挡着：「${r.pendingDialog.message}」` : ''
+      out(`${r.title}\n${r.url}${v}${d}`, r)
+      return
+    }
+    case 'wait-for': {
+      const [tabSpec, sel] = rest
+      if (!sel) die('用法: cb wait-for <tab> <选择器> [--timeout 15000]')
+      const tabId = await resolveTab(tabSpec)
+      const r = await call('waitFor', { tabId, selector: sel, timeoutMs: Number(flags.timeout || 15000), visible: !flags.any })
+      out(`等到了 ${sel} @ (${r.x}, ${r.y})「${r.text}」用了 ${r.waitedMs}ms`, r)
+      return
+    }
+    case 'hover': {
+      const [tabSpec, x, y] = rest
+      const tabId = await resolveTab(tabSpec)
+      const r = await call('hover', { tabId, x: Number(x), y: Number(y), selector: flags.sel || undefined })
+      out(`悬停到 (${r.x}, ${r.y})${r.target ? ` ${r.target.tag}「${r.target.text}」` : ''}`, r)
+      return
+    }
+    case 'scroll': {
+      const tabId = await resolveTab(rest[0])
+      const r = await call('scroll', {
+        tabId, x: Number(flags.x || 200), y: Number(flags.y || 200),
+        deltaY: Number(flags.dy || 600), deltaX: Number(flags.dx || 0),
+      })
+      out(`滚了 ${r.deltaY}px，现在 scrollY=${r.scrollY} / 页高 ${r.pageHeight}`, r)
+      return
+    }
+    case 'focus': {
+      const [tabSpec, sel] = rest
+      if (!sel) die('用法: cb focus <tab> <选择器>')
+      const tabId = await resolveTab(tabSpec)
+      const r = await call('focus', { tabId, selector: sel })
+      out(`已聚焦 ${r.focused}`, r)
+      return
+    }
+    case 'select': {
+      const [tabSpec, sel, value] = rest
+      if (!sel || value === undefined) die('用法: cb select <tab> <选择器> <值>')
+      const tabId = await resolveTab(tabSpec)
+      const r = await call('select', { tabId, selector: sel, value })
+      out(`选了「${r.label}」(${r.value})`, r)
+      return
+    }
+    case 'upload': {
+      const [tabSpec, sel, ...files] = rest
+      if (!sel || !files.length) die('用法: cb upload <tab> <选择器> <文件...>')
+      const tabId = await resolveTab(tabSpec)
+      const r = await call('upload', { tabId, selector: sel, files })
+      out(`塞了 ${r.files.length} 个文件进 ${r.selector}`, r)
+      return
+    }
+    case 'dialog': {
+      const [tabSpec, action, ...txt] = rest
+      if (!action) die('用法: cb dialog <tab> accept|dismiss [输入内容]')
+      const tabId = await resolveTab(tabSpec)
+      const r = await call('dialog', { tabId, action, text: txt.join(' ') || undefined })
+      out(`${r.action === 'accept' ? '放行' : '取消'}了弹窗`, r)
       return
     }
     case 'shot': {
