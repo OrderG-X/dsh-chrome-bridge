@@ -10,15 +10,67 @@
     </radialGradient>
   </defs>
 
+  <style>
+    .float { animation: float 3.4s ease-in-out infinite; }
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50%      { transform: translateY(-5px); }
+    }
+
+    .halo { animation: halo 3.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+    @keyframes halo {
+      0%, 100% { opacity: 0.75; transform: scale(1); }
+      50%      { opacity: 1;    transform: scale(1.08); }
+    }
+
+    .ripple {
+      fill: none; stroke: #4D6BFE; stroke-width: 2;
+      opacity: 0;
+      transform-box: fill-box; transform-origin: center;
+      animation: ripple 3.4s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
+    }
+    .r2 { animation-delay: 1.7s; }
+    @keyframes ripple {
+      0%   { transform: scale(0.55); opacity: 0.85; }
+      70%  { transform: scale(1.7);  opacity: 0; }
+      100% { transform: scale(1.7);  opacity: 0; }
+    }
+
+    .press {
+      transform-box: fill-box; transform-origin: center;
+      animation: press 3.4s ease-in-out infinite;
+    }
+    @keyframes press {
+      0%, 55%, 100% { transform: scale(1); }
+      62%           { transform: scale(0.84); }
+      70%           { transform: scale(1); }
+    }
+
+    .pill { animation: pill 3.4s ease-in-out infinite; }
+    .p2 { animation-delay: 0.12s; }
+    .p3 { animation-delay: 0.24s; }
+    .p4 { animation-delay: 0.36s; }
+    @keyframes pill {
+      0%, 60%, 100% { opacity: 1; }
+      66%           { opacity: 0.72; }
+    }
+  </style>
+
   <rect width="760" height="210" rx="18" fill="url(#bg)"/>
   <rect x="0.5" y="0.5" width="759" height="209" rx="17.5" fill="none" stroke="#30363d"/>
 
-  <!-- cursor glyph + ripple -->
-  <circle cx="76" cy="92" r="62" fill="url(#glow)"/>
-  <circle cx="76" cy="92" r="30" fill="none" stroke="#4D6BFE" stroke-width="2" opacity="0.45"/>
-  <g transform="translate(48,52) scale(1.85)">
-    <path d="M2 1 L2 22 L7.6 16.6 L12 28.4 L17 26.1 L12.6 14.6 L20.4 14.2 Z"
-          fill="#4D6BFE" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round"/>
+  <!-- cursor: halo breathes, rings ripple outward, the arrow dips like a click -->
+  <circle class="halo" cx="76" cy="92" r="62" fill="url(#glow)"/>
+  <circle class="ripple" cx="76" cy="92" r="30"/>
+  <circle class="ripple r2" cx="76" cy="92" r="30"/>
+
+  <g class="float">
+    <g class="press">
+      <g transform="translate(48,52) scale(1.85)">
+        <path d="M2 1 L2 22 L7.6 16.6 L12 28.4 L17 26.1 L12.6 14.6 L20.4 14.2 Z"
+              fill="#4D6BFE" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round"/>
+      </g>
+    </g>
   </g>
 
   <text x="146" y="86" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif"
@@ -30,18 +82,22 @@
   <text x="146" y="138" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif"
         font-size="14.5" fill="#8b949e">让 DSH agent 在你正在用的 Chrome 里动手 —— 带登录态，不新开浏览器。</text>
 
-  <!-- pills -->
   <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="600">
-    <rect x="146" y="156" width="132" height="26" rx="13" fill="#4D6BFE" fill-opacity="0.16" stroke="#4D6BFE" stroke-opacity="0.45"/>
-    <text x="212" y="173" fill="#8ea6ff" text-anchor="middle">native messaging</text>
-
-    <rect x="286" y="156" width="112" height="26" rx="13" fill="#4D6BFE" fill-opacity="0.16" stroke="#4D6BFE" stroke-opacity="0.45"/>
-    <text x="342" y="173" fill="#8ea6ff" text-anchor="middle">real CDP</text>
-
-    <rect x="406" y="156" width="96" height="26" rx="13" fill="#3fb950" fill-opacity="0.14" stroke="#3fb950" stroke-opacity="0.4"/>
-    <text x="454" y="173" fill="#7ee787" text-anchor="middle">no port</text>
-
-    <rect x="510" y="156" width="128" height="26" rx="13" fill="#3fb950" fill-opacity="0.14" stroke="#3fb950" stroke-opacity="0.4"/>
-    <text x="574" y="173" fill="#7ee787" text-anchor="middle">no Connect</text>
+    <g class="pill">
+      <rect x="146" y="156" width="132" height="26" rx="13" fill="#4D6BFE" fill-opacity="0.16" stroke="#4D6BFE" stroke-opacity="0.45"/>
+      <text x="212" y="173" fill="#8ea6ff" text-anchor="middle">native messaging</text>
+    </g>
+    <g class="pill p2">
+      <rect x="286" y="156" width="112" height="26" rx="13" fill="#4D6BFE" fill-opacity="0.16" stroke="#4D6BFE" stroke-opacity="0.45"/>
+      <text x="342" y="173" fill="#8ea6ff" text-anchor="middle">real CDP</text>
+    </g>
+    <g class="pill p3">
+      <rect x="406" y="156" width="96" height="26" rx="13" fill="#3fb950" fill-opacity="0.14" stroke="#3fb950" stroke-opacity="0.4"/>
+      <text x="454" y="173" fill="#7ee787" text-anchor="middle">no port</text>
+    </g>
+    <g class="pill p4">
+      <rect x="510" y="156" width="128" height="26" rx="13" fill="#3fb950" fill-opacity="0.14" stroke="#3fb950" stroke-opacity="0.4"/>
+      <text x="574" y="173" fill="#7ee787" text-anchor="middle">no Connect</text>
+    </g>
   </g>
 </svg>
