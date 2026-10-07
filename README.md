@@ -23,7 +23,7 @@
 
 **Give a DSH agent hands inside the Chrome you are already using** — your logins, your tabs, your session. Install once, no Connect button, ever.
 
-![the in-page cursor on a real page](assets/cursor-demo.png)
+![the in-page cursor driving a real page](assets/cursor-demo.gif)
 
 <sub>Every click flies a cursor to the target and labels what it is doing. It renders *inside the page*, so it lands in screenshots too — you and the model look at the same picture.</sub>
 

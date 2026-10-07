@@ -640,6 +640,39 @@ const OPS = {
     }
   },
 
+  /**
+   * 录一段屏幕（CDP screencast），用来做演示 GIF。
+   * 帧以 base64 JPEG 返回；调用方自己写文件、自己合成。
+   */
+  async screencast({ tabId, durationMs = 5000, maxWidth = 900, quality = 70, maxFrames = 140 }) {
+    await ensure(tabId)
+    const id = Number(tabId)
+    const frames = []
+    const onEvent = (src, method, params) => {
+      if (src.tabId !== id) return
+      if (method !== 'Page.screencastFrame') return
+      frames.push(params.data)
+      chrome.debugger
+        .sendCommand({ tabId: id }, 'Page.screencastFrameAck', { sessionId: params.sessionId })
+        .catch(() => {})
+    }
+    chrome.debugger.onEvent.addListener(onEvent)
+    try {
+      await send(tabId, 'Page.startScreencast', {
+        format: 'jpeg', quality, maxWidth, maxHeight: Math.round(maxWidth * 1.4), everyNthFrame: 1,
+      })
+      const deadline = Date.now() + Number(durationMs)
+      // 帧太多会把一条 native message 撑爆（也拖慢回传），到上限就提前收工
+      while (Date.now() < deadline && frames.length < Number(maxFrames)) {
+        await new Promise((r) => setTimeout(r, 100))
+      }
+      await send(tabId, 'Page.stopScreencast')
+    } finally {
+      chrome.debugger.onEvent.removeListener(onEvent)
+    }
+    return { count: frames.length, frames }
+  },
+
   /** 页内光标：CLI 把脚本内容传进来，这里只负责注入 + 调用 */
   async cursor({ tabId, script, action, x, y, duration }) {
     if (script) {
