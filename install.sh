@@ -28,6 +28,7 @@ if [ "${1:-}" = "--uninstall" ]; then
   rm -f /tmp/dsh-bridge.sock /tmp/dsh-bridge.token /tmp/dsh-bridge.log
   rm -rf "$BRIDGE" "$EXT_DIR"
   rm -f "$HOME/.dsh/bin/cb" "$HOME/.dsh/bin/dsh-chrome-bridge"
+  rm -f "$HOME/.local/bin/cb" "$HOME/.local/bin/dsh-chrome-bridge"
   rm -rf "$HOME/.dsh/skills/browser"
   echo "Removed: native host registration, host dir, extension dir, cb, manager, skill."
   echo "The Chrome extension itself must be removed at chrome://extensions (Chrome Bridge)."
@@ -94,6 +95,17 @@ cat > "$HOME/.dsh/bin/dsh-chrome-bridge" <<SH
 exec "$REPO/bridge" "\$@"
 SH
 chmod +x "$HOME/.dsh/bin/dsh-chrome-bridge"
+
+# ~/.dsh/bin is usually NOT on PATH (the agent's shell would get "cb: command not
+# found"), so also link both commands somewhere that is: ~/.local/bin.
+LOCAL_BIN="$HOME/.local/bin"
+mkdir -p "$LOCAL_BIN"
+ln -sf "$HOME/.dsh/bin/cb" "$LOCAL_BIN/cb"
+ln -sf "$HOME/.dsh/bin/dsh-chrome-bridge" "$LOCAL_BIN/dsh-chrome-bridge"
+case ":$PATH:" in
+  *":$LOCAL_BIN:"*) echo "    linked into $LOCAL_BIN (already on PATH)" ;;
+  *) echo "    linked into $LOCAL_BIN — add it to PATH if commands are not found" ;;
+esac
 
 echo "==> 6/6 install the DSH skill"
 mkdir -p "$HOME/.dsh/skills/browser"

@@ -17,6 +17,7 @@ cb tabs          # 列所有标签页（* = 当前活动）
 ```
 
 ❌ 连不上：让用户跑 `dsh-chrome-bridge update`，别自己瞎折腾。
+（万一 `cb` 说 command not found，用绝对路径 `~/.dsh/bin/cb`。）
 
 ## 命令
 
