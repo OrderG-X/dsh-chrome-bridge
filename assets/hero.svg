@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="210" viewBox="0 0 760 210" role="img" aria-label="dsh-chrome-bridge">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#161b22"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#4D6BFE" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#4D6BFE" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="760" height="210" rx="18" fill="url(#bg)"/>
+  <rect x="0.5" y="0.5" width="759" height="209" rx="17.5" fill="none" stroke="#30363d"/>
+
+  <!-- cursor glyph + ripple -->
+  <circle cx="76" cy="92" r="62" fill="url(#glow)"/>
+  <circle cx="76" cy="92" r="30" fill="none" stroke="#4D6BFE" stroke-width="2" opacity="0.45"/>
+  <g transform="translate(48,52) scale(1.85)">
+    <path d="M2 1 L2 22 L7.6 16.6 L12 28.4 L17 26.1 L12.6 14.6 L20.4 14.2 Z"
+          fill="#4D6BFE" stroke="#ffffff" stroke-width="1.4" stroke-linejoin="round"/>
+  </g>
+
+  <text x="146" y="86" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif"
+        font-size="38" font-weight="700" fill="#ffffff" letter-spacing="-0.5">dsh-chrome-bridge</text>
+
+  <text x="146" y="116" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+        font-size="14.5" fill="#8b949e">Give a DSH agent hands inside the Chrome you are already using.</text>
+
+  <text x="146" y="138" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif"
+        font-size="14.5" fill="#8b949e">让 DSH agent 在你正在用的 Chrome 里动手 —— 带登录态，不新开浏览器。</text>
+
+  <!-- pills -->
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="600">
+    <rect x="146" y="156" width="132" height="26" rx="13" fill="#4D6BFE" fill-opacity="0.16" stroke="#4D6BFE" stroke-opacity="0.45"/>
+    <text x="212" y="173" fill="#8ea6ff" text-anchor="middle">native messaging</text>
+
+    <rect x="286" y="156" width="112" height="26" rx="13" fill="#4D6BFE" fill-opacity="0.16" stroke="#4D6BFE" stroke-opacity="0.45"/>
+    <text x="342" y="173" fill="#8ea6ff" text-anchor="middle">real CDP</text>
+
+    <rect x="406" y="156" width="96" height="26" rx="13" fill="#3fb950" fill-opacity="0.14" stroke="#3fb950" stroke-opacity="0.4"/>
+    <text x="454" y="173" fill="#7ee787" text-anchor="middle">no port</text>
+
+    <rect x="510" y="156" width="128" height="26" rx="13" fill="#3fb950" fill-opacity="0.14" stroke="#3fb950" stroke-opacity="0.4"/>
+    <text x="574" y="173" fill="#7ee787" text-anchor="middle">no Connect</text>
+  </g>
+</svg>

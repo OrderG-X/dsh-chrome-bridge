@@ -1,19 +1,33 @@
-# dsh-chrome-bridge
+<div align="center">
 
-**Give a DSH agent hands inside the Chrome you are already using** — your logins, your tabs, your session. Install once, no Connect button, ever.
+<img src="assets/hero.svg" alt="dsh-chrome-bridge — native browser tools for DSH, inside the Chrome you already use" width="760" />
 
-[中文说明](README.zh.md) · [Design notes & pitfalls (中文)](docs/NOTES.zh.md)
+<p>
+  <a href="https://github.com/OrderG-X/dsh-chrome-bridge/releases"><img src="https://img.shields.io/github/v/release/OrderG-X/dsh-chrome-bridge?label=release&color=4D6BFE" alt="release" /></a>
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT" />
+  <img src="https://img.shields.io/badge/chrome-%E2%89%A5%20116-4285F4?logo=googlechrome&logoColor=white" alt="Chrome >= 116" />
+  <img src="https://img.shields.io/badge/platform-macOS-000000?logo=apple&logoColor=white" alt="macOS" />
+  <img src="https://img.shields.io/badge/node-%E2%89%A5%2018-43853d?logo=node.js&logoColor=white" alt="Node >= 18" />
+  <img src="https://img.shields.io/badge/CDP-chrome.debugger-4D6BFE" alt="chrome.debugger" />
+</p>
 
-```bash
-cb tabs                          # list your real tabs
-cb text active                   # read the visible text
-cb click-text active "Sign in"   # click by text — a real mouse event
-cb shot active --out /tmp/x.png  # screenshot (the cursor shows up in it)
-```
+<p>
+  <a href="README.md"><b>English</b></a> ·
+  <a href="README.zh.md">简体中文</a> ·
+  <a href="docs/NOTES.zh.md">Development notes</a>
+</p>
+
+</div>
 
 ---
 
-## Why another browser bridge?
+**Give a DSH agent hands inside the Chrome you are already using** — your logins, your tabs, your session. Install once, no Connect button, ever.
+
+![the in-page cursor on a real page](assets/cursor-demo.png)
+
+<sub>Every click flies a cursor to the target and labels what it is doing. It renders *inside the page*, so it lands in screenshots too — you and the model look at the same picture.</sub>
+
+## ✨ Why another browser bridge?
 
 Every existing option makes you click something, every time:
 
@@ -26,13 +40,11 @@ Every existing option makes you click something, every time:
 
 Three things make the difference:
 
-1. **Native messaging instead of a port.** The extension talks to a local Node host over Chrome's native messaging pipe. The CLI reaches the host through a `0600` Unix socket guarded by a token. There is no TCP port to scan, no origin to spoof.
-2. **`chrome.debugger` instead of injected scripts.** Clicks and keystrokes are dispatched as real CDP `Input.*` events, so they carry a user gesture — popups open, focus works, and sites that reject synthetic events behave normally. You also get screenshots, network, console and raw CDP for free.
-3. **A cursor the human can see.** Every click flies a small in-page cursor to the target, flashes a ripple and shows a label. It is rendered inside the page, so **it appears in screenshots** — you and the model look at the same picture.
+- 🔌 **Native messaging, not a port.** The extension talks to a local Node host over Chrome's native messaging pipe; the CLI reaches the host through a `0600` Unix socket guarded by a token. No TCP port to scan, no origin to spoof.
+- 🎯 **`chrome.debugger`, not injected scripts.** Clicks and keystrokes are dispatched as real CDP `Input.*` events, so they carry a user gesture — popups open, focus works, and sites that reject synthetic events behave normally. Screenshots, network, console and raw CDP come for free.
+- 👀 **A cursor the human can see.** Every click flies a small in-page cursor to the target, flashes a ripple and shows a label — and because it is rendered inside the page, **it appears in screenshots**.
 
----
-
-## Architecture
+## 🏗 Architecture
 
 ```
 DSH agent
@@ -49,11 +61,9 @@ DSH agent
 
 The extension ID is fixed by the public key embedded in `extension/manifest.json`, so it is **identical on every machine** and the native-host registration never needs editing.
 
----
+## 🚀 Install
 
-## Install
-
-Requirements: **macOS**, **Google Chrome 116+**, **Node.js**, and `python3` (installer only, to derive the extension ID).
+Requirements: **macOS**, **Google Chrome 116+**, **Node.js 18+**, and `python3` (installer only, to derive the extension ID).
 
 ```bash
 git clone https://github.com/OrderG-X/dsh-chrome-bridge.git
@@ -74,25 +84,35 @@ cb status     # host pid … | extension connected: ✅
 cb tabs
 ```
 
-### Optional: native DSH tools
+### 🧩 Optional: native DSH tools
 
-Without this you drive the bridge from a shell (`cb …`). With it, DSH gets **9 native tools** (`browser_tabs`, `browser_read`, `browser_click`, `browser_input`, `browser_nav`, `browser_screenshot`, `browser_eval`, `browser_wait`, `browser_dialog`), and screenshots come back as **images the model actually sees**.
+Without this you drive the bridge from a shell (`cb …`). With it, DSH gets **9 native tools**, and screenshots come back as **images the model actually sees**.
 
-DSH sidebar → **Plugins** → **Add plugin** → paste either of these → Install → Enable → **restart DSH**:
+Sidebar → **Plugins** → **Add plugin** → paste either of these → Install → Enable → **restart DSH**:
 
 ```
 /absolute/path/to/dsh-chrome-bridge/plugin          # local checkout (recommended for development)
 github:OrderG-X/dsh-chrome-bridge#path:plugin       # straight from GitHub, no clone needed
 ```
 
+| Tool | What it does |
+|---|---|
+| `browser_tabs` | list / find / open / close / activate tabs |
+| `browser_read` | visible text, HTML, attributes, page info |
+| `browser_click` | click by selector, by text, or by coordinates |
+| `browser_input` | type, press keys, select, upload, hover, scroll |
+| `browser_nav` | navigate and wait for load |
+| `browser_screenshot` | screenshot **returned as an image** (viewport / full / element) |
+| `browser_eval` | run JS in the page |
+| `browser_wait` | wait for an element to appear |
+| `browser_dialog` | release alert / confirm / prompt |
+
 > A freshly installed bundle is not hot-loaded; the app must be restarted once.
 > `dsh plugin add` from the CLI refuses the app-managed profile — use the GUI.
 > Plugin updates are not automatic in DSH yet: to upgrade, uninstall and install again.
 > A **local path** install is a `link:`, so a `git pull` is enough there.
 
----
-
-## Usage
+## 📖 Usage
 
 ### `cb` — from the shell
 
@@ -137,18 +157,16 @@ dsh-chrome-bridge logs        # extension log + host log
 dsh-chrome-bridge uninstall
 ```
 
----
-
-## Security
+## 🔒 Security
 
 Be honest about what this is: **the extension can read and control every page you are logged into.**
 
-- The bridge is **local-only**. Native messaging is a private pipe; the CLI socket is `0600` and additionally token-guarded. No network listener is opened.
+- The bridge is **local-only**. Native messaging is a private pipe; the CLI socket is `0600` and additionally token-guarded. **No network listener is opened.**
 - Chrome shows a permanent *"… is debugging this browser"* banner while attached. That banner is the point — you can always see that it is active.
 - Anything that can already run as your user can read your Chrome profile; this does not widen that boundary. It does make it *convenient*, which is worth a thought before leaving an agent unattended.
 - Detach any time: click **Cancel** on the banner, or `cb detach <tab>`.
 
-## Limitations
+## ⚠️ Limitations
 
 - **macOS only** for now — the native-host registration path is macOS-specific; Windows and Linux need their own registration directory.
 - **`chrome://` pages are unreachable** — Chrome forbids injection there. Use a normal tab.
@@ -157,8 +175,10 @@ Be honest about what this is: **the extension can read and control every page yo
 - Chrome 137+ removed `--load-extension`, so the very first load must go through `chrome://extensions`.
 - Distributed **unpacked**, not through the Chrome Web Store — the `debugger` permission is not realistically approvable there.
 
-## Contributing
+## 🤝 Contributing
 
-Issues and PRs welcome. `docs/NOTES.zh.md` is the running log of every pitfall hit while building this — read it before changing the extension or the plugin; it will save you a day.
+Issues and PRs welcome.
+
+`docs/NOTES.zh.md` is the running log of every pitfall hit while building this — read it before changing the extension or the plugin; it will save you a day. It also documents a way to **verify the plugin without restarting your app** (throwaway profile + headless).
 
 MIT licensed.

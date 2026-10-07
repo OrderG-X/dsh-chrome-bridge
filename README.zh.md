@@ -1,19 +1,33 @@
-# dsh-chrome-bridge
+<div align="center">
 
-**让 DSH agent 在你正在用的 Chrome 里动手**——带你的登录态、你的标签页、你的会话。装一次，永远不用再点 Connect。
+<img src="assets/hero.svg" alt="dsh-chrome-bridge — 让 DSH agent 在你正在用的 Chrome 里动手" width="760" />
 
-[English](README.md) · [设计与踩坑记录](docs/NOTES.zh.md)
+<p>
+  <a href="https://github.com/OrderG-X/dsh-chrome-bridge/releases"><img src="https://img.shields.io/github/v/release/OrderG-X/dsh-chrome-bridge?label=release&color=4D6BFE" alt="release" /></a>
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT" />
+  <img src="https://img.shields.io/badge/chrome-%E2%89%A5%20116-4285F4?logo=googlechrome&logoColor=white" alt="Chrome >= 116" />
+  <img src="https://img.shields.io/badge/platform-macOS-000000?logo=apple&logoColor=white" alt="macOS" />
+  <img src="https://img.shields.io/badge/node-%E2%89%A5%2018-43853d?logo=node.js&logoColor=white" alt="Node >= 18" />
+  <img src="https://img.shields.io/badge/CDP-chrome.debugger-4D6BFE" alt="chrome.debugger" />
+</p>
 
-```bash
-cb tabs                          # 列出你真实的标签页
-cb text active                   # 读页面可见文字
-cb click-text active "登录"       # 按文字点 —— 真实鼠标事件
-cb shot active --out /tmp/x.png  # 截图（光标会一起入镜）
-```
+<p>
+  <a href="README.md">English</a> ·
+  <a href="README.zh.md"><b>简体中文</b></a> ·
+  <a href="docs/NOTES.zh.md">开发踩坑记录</a>
+</p>
+
+</div>
 
 ---
 
-## 为什么还要再造一个
+**让 DSH agent 在你正在用的 Chrome 里动手**——带你的登录态、你的标签页、你的会话。装一次，永远不用再点 Connect。
+
+![页内光标在真实页面上的效果](assets/cursor-demo.png)
+
+<sub>每次点击都会有个小光标飞到目标上，并标出它在干什么。它渲染在**页面里**，所以**会进截图**——人和模型看到的是同一画面。</sub>
+
+## ✨ 为什么还要再造一个
 
 现有方案每次都要你点一下：
 
@@ -26,13 +40,11 @@ cb shot active --out /tmp/x.png  # 截图（光标会一起入镜）
 
 三点关键差异：
 
-1. **native messaging，不开端口。** 扩展通过 Chrome 的原生消息管道跟本地 Node 宿主通信；CLI 通过一个 `0600` 的 Unix socket 找宿主，还带 token 校验。没有 TCP 端口可扫，没有 origin 可伪造。
-2. **`chrome.debugger`，不是注入脚本。** 点击和按键走真实 CDP `Input.*` 事件，带 user gesture —— 弹窗能开、焦点正常、那些拒绝合成事件的站点也照常工作。顺带白拿截图、网络、console 和任意 CDP。
-3. **人看得见的光标。** 每次点击都会有个页内小光标飞过去、闪个涟漪、冒个标签。它渲染在页面里，所以**会出现在截图里**——人和模型看到的是同一画面。
+- 🔌 **native messaging，不开端口** —— 扩展通过 Chrome 的原生消息管道跟本地 Node 宿主通信；CLI 通过一个 `0600` 的 Unix socket 找宿主，还带 token 校验。没有 TCP 端口可扫，没有 origin 可伪造
+- 🎯 **`chrome.debugger`，不是注入脚本** —— 点击和按键走真实 CDP `Input.*` 事件，带 user gesture：弹窗能开、焦点正常、那些拒绝合成事件的站点也照常工作。顺带白拿截图、网络、console 和任意 CDP
+- 👀 **人看得见的光标** —— 每次点击都会有个页内小光标飞过去、闪个涟漪、冒个标签。它渲染在页面里，所以**会出现在截图里**
 
----
-
-## 架构
+## 🏗 架构
 
 ```
 DSH agent
@@ -49,11 +61,9 @@ DSH agent
 
 扩展 ID 由 `extension/manifest.json` 里的公钥固定，所以**每台机器上装的 ID 都一样**，注册文件不用改。
 
----
+## 🚀 安装
 
-## 安装
-
-要求：**macOS**、**Chrome 116+**、**Node.js**、`python3`（只用于算扩展 ID）。
+要求：**macOS**、**Chrome 116+**、**Node.js 18+**、`python3`（只用于算扩展 ID）。
 
 ```bash
 git clone https://github.com/OrderG-X/dsh-chrome-bridge.git
@@ -74,27 +84,36 @@ cb status     # 宿主 pid … | 扩展连接: ✅
 cb tabs
 ```
 
-### 可选：DSH 原生工具
+### 🧩 可选：DSH 原生工具
 
-不装也能用，只是要从命令行敲 `cb`。装了之后 DSH 多出 **9 个原生工具**（`browser_tabs`、`browser_read`、`browser_click`、`browser_input`、`browser_nav`、`browser_screenshot`、`browser_eval`、`browser_wait`、`browser_dialog`），而且截图会**当图片返回**，模型真的看得见。
+不装也能用，只是要从命令行敲 `cb`。装了之后 DSH 多出 **9 个原生工具**，而且截图会**当图片返回**，模型真的看得见。
 
-DSH 侧栏 → **插件** → **添加插件** → 粘贴下面任一个 → 安装 → 启用 → **重启 DSH**：
+侧栏 → **插件** → **添加插件** → 粘贴下面任一个 → 安装 → 启用 → **重启 DSH**：
 
 ```
 /本仓库绝对路径/plugin                          # 本地路径（开发时推荐）
 github:OrderG-X/dsh-chrome-bridge#path:plugin   # 直接装 GitHub，不用 clone
 ```
 
+| 工具 | 干什么 |
+|---|---|
+| `browser_tabs` | 列 / 找 / 开 / 关 / 切标签页 |
+| `browser_read` | 读文字 / HTML / 属性 / 页面信息 |
+| `browser_click` | 按选择器、文字或坐标点 |
+| `browser_input` | 输入 / 按键 / 选下拉 / 传文件 / 悬停 / 滚动 |
+| `browser_nav` | 跳转并等加载 |
+| `browser_screenshot` | 截图，**以图片返回**（视口 / 整页 / 元素） |
+| `browser_eval` | 页面里跑 JS |
+| `browser_wait` | 等元素出现 |
+| `browser_dialog` | 放行 alert / confirm / prompt |
+
 > 新装的 bundle 不会热加载，必须重启一次 app。
 > CLI 的 `dsh plugin add` 对 app 独占的 profile 会拒绝，走 GUI。
-> DSH 目前**不支持插件自动更新**：升级要卸载后重装。
-> 用**本地路径**装的是 `link:`，所以 `git pull` 一下就够。
+> DSH 目前**不支持插件自动更新**：升级要卸载后重装。用**本地路径**装的是 `link:`，`git pull` 一下就够。
 
----
+## 📖 用法
 
-## 用法
-
-### `cb` 命令
+### `cb` 命令行
 
 ```bash
 cb status / cb version / cb reload      # 健康检查 / 改完扩展热重载
@@ -124,8 +143,7 @@ cb cursor active click 400 300          # 手动驱动光标
 cb cdp    active Page.reload '{}'       # 原始 CDP 逃生口
 ```
 
-`active` 可以换成具体 tabId。加 `--json` 出原始 JSON。
-点击和输入默认会带动可见光标，加 `--no-cursor` 可关。
+`active` 可以换成具体 tabId。加 `--json` 出原始 JSON。点击和输入默认带动光标，`--no-cursor` 可关。
 
 ### 管理命令
 
@@ -137,28 +155,28 @@ dsh-chrome-bridge logs        # 扩展日志 + 宿主日志
 dsh-chrome-bridge uninstall
 ```
 
----
-
-## 安全
+## 🔒 安全
 
 说实话：**这个扩展能读和操作你所有已登录的页面。**
 
-- 桥是**纯本地**的。原生消息是私有管道；CLI socket 是 `0600` 且额外带 token。不监听任何网络端口。
-- 附加期间 Chrome 会一直显示"…正在调试此浏览器"的提示条。这条提示条正是重点——你随时能看见它在工作。
-- 能以你的身份跑的程序本来就能读你的 Chrome 配置，这个不扩大边界。但它让这件事变得**很方便**——所以让 agent 无人值守地跑之前，值得想一下。
-- 随时断开：点提示条上的**取消**，或 `cb detach <tab>`。
+- 桥是**纯本地**的。原生消息是私有管道；CLI socket 是 `0600` 且额外带 token。**不监听任何网络端口**
+- 附加期间 Chrome 一直显示"…正在调试此浏览器"的提示条 —— 这条提示条正是重点，你随时看得见它在工作
+- 能以你的身份跑的程序本来就能读你的 Chrome 配置，这个不扩大边界。但它让这件事变得**很方便**，所以让 agent 无人值守地跑之前值得想一下
+- 随时断开：点提示条上的**取消**，或 `cb detach <tab>`
 
-## 已知限制
+## ⚠️ 已知限制
 
-- **目前只有 macOS**——原生宿主的注册路径是 macOS 专有的，Windows/Linux 需要各自的注册目录。
-- **`chrome://` 内部页进不去**——浏览器禁止注入，换普通标签页。
-- `alert()` 会把页面卡死：`cb info` 会警告你，`cb dialog accept` 放行。
-- Chrome 会把后台标签页的 `alert()` 推迟到该标签页获得焦点才弹。
-- Chrome 137+ 移除了 `--load-extension`，所以首次必须在 `chrome://extensions` 手动加载。
-- **不走 Chrome 应用商店**——`debugger` 权限在那里基本不可能过审，只提供解压安装。
+- **目前只有 macOS** —— 原生宿主的注册路径是 macOS 专有的，Windows/Linux 需要各自的注册目录
+- **`chrome://` 内部页进不去** —— 浏览器禁止注入，换普通标签页
+- `alert()` 会把页面卡死：`cb info` 会警告，`cb dialog accept` 放行
+- Chrome 会把后台标签页的 `alert()` 推迟到该标签页获得焦点才弹
+- Chrome 137+ 移除了 `--load-extension`，首次必须在 `chrome://extensions` 手动加载
+- **不走 Chrome 应用商店** —— `debugger` 权限在那里基本不可能过审
 
-## 贡献
+## 🤝 贡献
 
-欢迎 issue 和 PR。`docs/NOTES.zh.md` 是开发过程中踩过的每一个坑的流水账——动扩展或插件之前先读它，能省你一天。
+欢迎 issue 和 PR。
+
+`docs/NOTES.zh.md` 是开发过程中踩过的每一个坑的流水账——动扩展或插件之前先读它，能省你一天。里面还写了一套**不用重启你的 app 就能验证插件**的办法（临时 profile + headless）。
 
 MIT 协议。
