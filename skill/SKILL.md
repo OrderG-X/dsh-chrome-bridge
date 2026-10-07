@@ -6,7 +6,7 @@ whenToUse: 任务要在"用户已经登录的那个浏览器"里做事情，或�
 
 # 浏览器操作（DSH Bridge）
 
-你有一台**真实 Chrome** 的遥控器：命令 `cb`。
+你有一台**真实 Chrome** 的遥控器：命令 `cb`（也有原生的 `browser_*` 工具，能用就优先用工具）。
 它连着用户正在用的浏览器（带登录态、不新开窗口），装一次永久可用。
 
 ## 第一步永远是确认它活着
@@ -16,7 +16,7 @@ cb status        # 要看到「扩展连接: ✅」
 cb tabs          # 列所有标签页（* = 当前活动）
 ```
 
-❌ 就连不上：让用户跑 `~/Projects/browser-agent-kit/bridge update`，别自己瞎折腾。
+❌ 连不上：让用户跑 `dsh-chrome-bridge update`，别自己瞎折腾。
 
 ## 命令
 

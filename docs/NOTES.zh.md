@@ -121,7 +121,7 @@ DSH(bash) → cb CLI → Unix socket → 原生消息宿主 ←stdio(native mess
 
 - 源码在本仓库：`extension/`（MV3 扩展）、`host/`（Node 原生宿主）、`bin/cb`（CLI）
 - 安装产物：扩展 `~/dsh-bridge-extension`（**故意放可见目录**，Chrome 文件框点侧边栏
-  「guo」就能选中，不用 ⌘⇧G 去开隐藏目录）；宿主 `~/.dsh/chrome-bridge/host/`；
+  点侧边栏的家目录就能选中，不用 ⌘⇧G 去开隐藏目录）；宿主 `~/.dsh/chrome-bridge/host/`；
   CLI `~/.dsh/bin/cb`
 - 扩展 ID **`mhlkjkblmdleplggfengldbdmkabloce`**，由 manifest 里的 `key`（RSA 公钥
   base64 DER）推导，永久固定，已写进 `allowed_origins`
@@ -297,7 +297,7 @@ plugin/
 
 ```bash
 cp -R ~/.dsh/profiles/headless ~/.dsh/profiles/plugtest
-dsh plugin --profile plugtest add /Users/guo/Projects/browser-agent-kit/plugin   # 非 app 独占的 profile 可以装
+dsh plugin --profile plugtest add <repo>/plugin   # 非 app 独占的 profile 可以装
 dsh --profile plugtest "调用 browser_tabs ..."                                   # headless 起一次，看 trace 日志
 ```
 

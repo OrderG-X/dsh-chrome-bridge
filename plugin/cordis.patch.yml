@@ -1,4 +1,4 @@
-# Browser Bridge 的 bundle patch：把插件行插进 profile
+# Bundle patch for dsh-chrome-bridge: inserts the plugin row into the DSH profile.
 - insert:
-    - id: browser-bridge
-      name: '@local/dsh-browser-bridge'
+    - id: chrome-bridge
+      name: 'dsh-chrome-bridge'

@@ -1,18 +1,43 @@
 {
-  "name": "@local/dsh-browser-bridge",
+  "name": "dsh-chrome-bridge",
   "version": "1.0.0",
-  "private": true,
+  "description": "DSH plugin: native browser_* tools that drive the Chrome you are already using — over native messaging + CDP. No WebSocket, no port, no Connect button.",
   "type": "module",
-  "description": "原生 browser_* 工具：直接操作用户正在用的 Chrome（读页面/点击/输入/截图/跑 JS）",
+  "license": "MIT",
+  "author": "OrderG-X",
+  "homepage": "https://github.com/OrderG-X/dsh-chrome-bridge",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OrderG-X/dsh-chrome-bridge.git",
+    "directory": "plugin"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "browser",
+    "chrome",
+    "cdp",
+    "chrome-devtools-protocol",
+    "native-messaging",
+    "browser-automation",
+    "agent"
+  ],
   "exports": {
     ".": "./index.js",
     "./package.json": "./package.json",
     "./icon.svg": "./icon.svg"
   },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "package.json"
+  ],
   "icon": "./icon.svg",
   "meta": {
-    "title": "Browser Bridge",
-    "description": "把 DSH 接到真实 Chrome：原生 browser_* 工具，不用每次点连接"
+    "title": "Chrome Bridge",
+    "description": "原生 browser_* 工具，直接操作用户正在用的 Chrome（native messaging + CDP）"
   },
   "dsh": {
     "bundle": {

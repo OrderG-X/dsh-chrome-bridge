@@ -1,108 +1,157 @@
-# browser-agent-kit
+# dsh-chrome-bridge
 
-让 DSH（DeepSeek Harness）原生地操作**浏览器**——装一次永久可用、不点 Connect、真实 CDP 事件。
+**Give a DSH agent hands inside the Chrome you are already using** — your logins, your tabs, your session. Install once, no Connect button, ever.
 
-## DSH Bridge（已跑通）
-
-```
-DSH(bash) → cb CLI → Unix socket → 原生宿主 ←native messaging→ Chrome 扩展 → chrome.debugger → CDP
-```
-
-| 部件 | 位置 | 说明 |
-|---|---|---|
-| Chrome 扩展 | `extension/` → 装到 `~/dsh-bridge-extension` | MV3，固定扩展 ID（manifest 里的 `key` 推导） |
-| 原生宿主 | `host/host.js` + `run.sh` | Node，native messaging ↔ Unix socket 双向转发 |
-| CLI | `bin/cb` | DSH 调它，像调本地命令一样 |
-
-## 安装（一次性）
+[中文说明](README.zh.md) · [Design notes & pitfalls (中文)](docs/NOTES.zh.md)
 
 ```bash
+cb tabs                          # list your real tabs
+cb text active                   # read the visible text
+cb click-text active "Sign in"   # click by text — a real mouse event
+cb shot active --out /tmp/x.png  # screenshot (the cursor shows up in it)
+```
+
+---
+
+## Why another browser bridge?
+
+Every existing option makes you click something, every time:
+
+| Option | What goes wrong |
+|---|---|
+| `chrome-devtools-mcp --autoConnect` | Chrome asks *"Allow remote debugging?"* on **every** connection |
+| Browser MCP (store extension) | You must click the extension icon → **Connect** on **every** tab |
+| WebSocket-based bridges | Open a TCP port and trust anything that can reach it |
+| **dsh-chrome-bridge** | Nothing to click. Nothing listening on a port. |
+
+Three things make the difference:
+
+1. **Native messaging instead of a port.** The extension talks to a local Node host over Chrome's native messaging pipe. The CLI reaches the host through a `0600` Unix socket guarded by a token. There is no TCP port to scan, no origin to spoof.
+2. **`chrome.debugger` instead of injected scripts.** Clicks and keystrokes are dispatched as real CDP `Input.*` events, so they carry a user gesture — popups open, focus works, and sites that reject synthetic events behave normally. You also get screenshots, network, console and raw CDP for free.
+3. **A cursor the human can see.** Every click flies a small in-page cursor to the target, flashes a ripple and shows a label. It is rendered inside the page, so **it appears in screenshots** — you and the model look at the same picture.
+
+---
+
+## Architecture
+
+```
+DSH agent
+  ├── browser_* tools  (DSH plugin)  ─┐
+  └── cb CLI           (shell)       ─┤
+                                      ▼
+                     Unix socket  /tmp/dsh-bridge.sock   (0600 + token)
+                                      ▼
+                     Node native host  ←─ native messaging (stdio) ─→  Chrome extension (MV3)
+                                                                            │ chrome.debugger
+                                                                            ▼
+                                                                       real CDP
+```
+
+The extension ID is fixed by the public key embedded in `extension/manifest.json`, so it is **identical on every machine** and the native-host registration never needs editing.
+
+---
+
+## Install
+
+Requirements: **macOS**, **Google Chrome 116+**, **Node.js**, and `python3` (installer only, to derive the extension ID).
+
+```bash
+git clone https://github.com/OrderG-X/dsh-chrome-bridge.git
+cd dsh-chrome-bridge
 ./install.sh
-# 然后去 chrome://extensions → 开发者模式 → 加载未打包的扩展程序
-# 选 ~/dsh-bridge-extension
 ```
 
-装完**不用点任何 Connect**。扩展 ID 固定为 `mhlkjkblmdleplggfengldbdmkabloce`，已绑进原生宿主注册文件。
+Then the one manual step, once in your life:
 
-## 日常管理
+1. open `chrome://extensions`
+2. enable **Developer mode** (top right)
+3. **Load unpacked** → pick `~/dsh-bridge-extension`
+
+Verify:
 
 ```bash
-./bridge status      # 仓库版本 / 已装版本 / 运行版本 + 连接状态
-./bridge update      # 改完代码：同步 + 热重载扩展（不用点 Chrome 刷新）
-./bridge test        # 端到端自检
-./bridge logs        # 扩展日志 + 宿主日志
-./bridge uninstall
+cb status     # host pid … | extension connected: ✅
+cb tabs
 ```
 
-## cb 速查
+### Optional: native DSH tools
+
+Without this you drive the bridge from a shell (`cb …`). With it, DSH gets **9 native tools** (`browser_tabs`, `browser_read`, `browser_click`, `browser_input`, `browser_nav`, `browser_screenshot`, `browser_eval`, `browser_wait`, `browser_dialog`), and screenshots come back as **images the model actually sees**.
+
+DSH sidebar → **Plugins** → **Add plugin** → paste the absolute path to the `plugin/` folder in this repo → Install → Enable → **restart DSH**.
+
+> A freshly installed bundle is not hot-loaded; the app must be restarted once.
+> `dsh plugin add` from the CLI refuses the app-managed profile — use the GUI.
+
+---
+
+## Usage
+
+### `cb` — from the shell
 
 ```bash
-cb tabs                                   # 列标签页（* = 当前活动）
-cb find 关键词                             # 按标题/URL 找
-cb info   active                           # 标题/URL/视口/有没有弹窗挡着
+cb status / cb version / cb reload      # health, hot-reload the extension after edits
 
-cb text   active                           # 整页可见文字
-cb text   active "article"                 # 指定元素
-cb html   active "form"                    # 外层 HTML
-cb attr   active "a" href
-cb wait-for active "button.submit"         # 等元素出现（默认 15s）
+cb tabs                                 # list tabs (* = active)
+cb find <keyword>                       # filter by title/URL
+cb info   active                        # title, URL, viewport, pending dialog
 
-cb eval   active "document.title"          # 页面里跑 JS
-cb click-el   active "button.submit"       # 按选择器点（真实鼠标事件）
-cb click-text active "登录"                # 按文字点
-cb click  active 400 300                   # 按坐标点
-cb type   active "hello" --into "input"    # 输入
-cb key    active Enter                     # 按键；组合键写 "meta+a"
-cb focus  active "#email"
-cb select active "select#city" 杭州
-cb upload active "input[type=file]" ~/a.pdf
-cb hover  active --sel "button"
-cb scroll active --dy 600
-cb dialog active accept                    # 放行 alert/confirm（否则页面会卡住）
+cb text   active [selector]             # visible text (best first read)
+cb html   active [selector]
+cb attr   active <selector> <name>
+cb wait-for active "<selector>"         # wait until it exists and is visible
+
+cb eval   active "<js>"                 # run JS in the page
+cb click-el   active "<selector>"       # real mouse event
+cb click-text active "Sign in"
+cb click  active <x> <y>
+cb type   active "text" --into "<selector>"
+cb key    active Enter                  # combos: "meta+a"
+cb focus / cb select / cb upload / cb hover / cb scroll
+cb dialog active accept                 # release an alert/confirm — otherwise the page hangs
 
 cb nav    active https://example.com
-cb shot   active --out /tmp/x.png          # 截图（页内光标会一起入镜）
-cb shot   active --full                    # 整页
-cb shot   active --sel "svg"               # 只截某个元素
-cb console active                          # 页面 console
-cb network active --reload                 # 网络请求（谁 404 了、谁慢）
-cb cursor active click 400 300             # 页内光标：move / click / hide
-cb cdp    active Page.reload '{}'          # 原始 CDP 逃生口
-cb reload / cb version                     # 热重载 / 看扩展版本
+cb shot   active --out /tmp/x.png       # --full whole page, --sel "<selector>" one element
+cb console active / cb network active --reload
+cb cursor active click 400 300          # drive the cursor by hand
+cb cdp    active Page.reload '{}'       # raw CDP escape hatch
 ```
 
-`active` 可以换成具体 tabId。任何命令加 `--json` 出原始 JSON。
-**点击和输入默认会带动页内光标**（飞过去 → 涟漪 → 真点击），加 `--no-cursor` 关掉。
+`active` can be replaced by a tab id. Add `--json` for raw output.
+Clicks and typing move the visible cursor by default; pass `--no-cursor` to skip it.
 
-## DSH 插件（原生工具）
+### Management
 
-`plugin/` 是一个 DSH bundle，装进 profile 后 DSH 直接多出 **9 个原生工具**：
-
+```bash
+dsh-chrome-bridge status      # repo / installed / running version + connection
+dsh-chrome-bridge update      # sync code + hot-reload the extension (no Chrome clicking)
+dsh-chrome-bridge test        # end-to-end self test
+dsh-chrome-bridge logs        # extension log + host log
+dsh-chrome-bridge uninstall
 ```
-browser_tabs  browser_read  browser_click  browser_input  browser_nav
-browser_screenshot  browser_eval  browser_wait  browser_dialog
-```
 
-装了插件就不用走 bash 调 `cb`：模型直接调工具，截图还能**当图片返回**给模型看。
-插件本身只是个 socket 客户端，协议和 `cb` 完全一样，所以两边共用同一个宿主和扩展。
+---
 
-安装（GUI，一次性）：侧栏「插件」→「添加插件」→ 粘贴 `/Users/guo/Projects/browser-agent-kit/plugin` → 安装 → 立即启用。
-**装完要重启 DSH**（新 bundle 不会热加载，实测 app 不重启不会 import 插件模块）。
+## Security
 
-> CLI 的 `dsh plugin add` 对 desktop profile 无效——它被 Electron app 独占。
+Be honest about what this is: **the extension can read and control every page you are logged into.**
 
-## DSH 技能
+- The bridge is **local-only**. Native messaging is a private pipe; the CLI socket is `0600` and additionally token-guarded. No network listener is opened.
+- Chrome shows a permanent *"… is debugging this browser"* banner while attached. That banner is the point — you can always see that it is active.
+- Anything that can already run as your user can read your Chrome profile; this does not widen that boundary. It does make it *convenient*, which is worth a thought before leaving an agent unattended.
+- Detach any time: click **Cancel** on the banner, or `cb detach <tab>`.
 
-`install.sh` 会装一个 `browser` 技能到 `~/.dsh/skills/browser/SKILL.md`，
-所以**新会话自己就知道 `cb` 怎么用**，不用你每次交代。
-改技能内容：编辑 `skill/SKILL.md` 后跑 `./bridge update`（技能目录是热监视的，立刻生效）。
+## Limitations
 
-## 为什么自建
+- **macOS only** for now — the native-host registration path is macOS-specific; Windows and Linux need their own registration directory.
+- **`chrome://` pages are unreachable** — Chrome forbids injection there. Use a normal tab.
+- An `alert()` blocks the page: `cb info` warns you, `cb dialog accept` releases it.
+- Chrome defers `alert()` in background tabs until the tab is focused.
+- Chrome 137+ removed `--load-extension`, so the very first load must go through `chrome://extensions`.
+- Distributed **unpacked**, not through the Chrome Web Store — the `debugger` permission is not realistically approvable there.
 
-Chrome 官方 `--autoConnect`、Browser MCP、hangwin/mcp-chrome 都要**每次手点允许/连接**。
-自建扩展用 `chrome.debugger`，只有一条提示条、显示自己的名字，装一次之后永远可用。
+## Contributing
 
-## 其他文件
+Issues and PRs welcome. `docs/NOTES.zh.md` is the running log of every pitfall hit while building this — read it before changing the extension or the plugin; it will save you a day.
 
-- `scratch/` —— 光标浮层的两份源码（页内 / 系统级 NSPanel）
-- `notes/HANDOFF.md` —— 2026-10-07 凌晨那轮调研的完整结论与踩坑
+MIT licensed.
