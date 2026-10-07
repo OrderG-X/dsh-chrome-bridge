@@ -112,3 +112,44 @@ DSH(bash) → cb CLI → Unix socket → 原生消息宿主 ←stdio(native mess
 - [ ] 给 `@anionex/dsh-computer-use` 提 issue：`-0` 兼容性 + 增加 `cursorVisualization: always`
 - [ ] 给 DeepSeek 反馈：官方 computer-use 只有注册层、没有实现
 - [ ] 若还想走现成方案，优先试 `hangwin/mcp-chrome`（确认是否只需连接一次）
+
+---
+
+# 2026-10-07 上午 —— 第四节已重建完成（实测可用）
+
+## 落地位置
+
+- 源码在本仓库：`extension/`（MV3 扩展）、`host/`（Node 原生宿主）、`bin/cb`（CLI）
+- 安装产物：扩展 `~/dsh-bridge-extension`（**故意放可见目录**，Chrome 文件框点侧边栏
+  「guo」就能选中，不用 ⌘⇧G 去开隐藏目录）；宿主 `~/.dsh/chrome-bridge/host/`；
+  CLI `~/.dsh/bin/cb`
+- 扩展 ID **`mhlkjkblmdleplggfengldbdmkabloce`**，由 manifest 里的 `key`（RSA 公钥
+  base64 DER）推导，永久固定，已写进 `allowed_origins`
+
+## 与第四节设计的两处不同
+
+1. **大结果分片**：native messaging 单条消息有上限，截图 base64 会超。
+   扩展 → 宿主方向按 200KB 分片（`{id, chunk:{seq,total}, data}`），宿主重组。
+2. **热重载**：加了 `reload` op（`chrome.runtime.reload()`）+ `./bridge update`，
+   改完扩展代码不用再去 chrome://extensions 点刷新。
+
+## 实测结论（2026-10-07 09:2x）
+
+- ✅ 读到用户真实 Chrome 的 8 个标签页、真实登录态
+- ✅ `cb eval` / `cb shot`（263KB PNG）/ `cb cursor`（页内光标入镜）全部通过
+- ✅ 装完无 Connect、无弹窗，只有一条"DSH Bridge 正在调试此标签页"提示条
+- ⚠️ `active` 指向 `chrome://` 页面时 CDP 拒绝（`Cannot access a chrome:// URL`），
+  要用具体 tabId 换一个普通网页
+
+## 踩坑记录（新增）
+
+- **Chrome 137+ 已移除 `--load-extension`**，首次必须手动"加载未打包"（3 步，一辈子一次）
+- **`chrome://extensions` 无法用 `open` 命令打开**（LaunchServices 不认 chrome:// scheme），
+  要用 AppleScript `make new tab with properties {URL:"chrome://extensions/"}`
+- **bash 里 `$VAR` 紧跟中文标点会被当成变量名的一部分**（`$EXT_DIR）` → unbound variable），
+  必须写 `${EXT_DIR}`
+- **MV3 SW 刚重启时宿主会误判"扩展未连接"**：宿主只在上次收到扩展消息后才置 `extReady`。
+  修法：扩展 connectNative 成功后主动发一条 `{hello:true}`
+- **CLI 用 `sock.end()` 收尾进程不退出**（对端不关连接，句柄一直挂着），改 `sock.destroy()`
+  + `process.exit(0)`
+

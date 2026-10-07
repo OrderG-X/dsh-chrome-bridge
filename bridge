@@ -1,0 +1,78 @@
+#!/bin/bash
+# bridge —— DSH Bridge 的统一管理入口
+#
+#   ./bridge install     首次安装（写注册文件、装 cb、提示加载扩展）
+#   ./bridge update      改完代码同步到已装目录，并热重载扩展（不用点 Chrome 刷新）
+#   ./bridge status      仓库版本 / 已装版本 / 实际运行版本 + 连接状态
+#   ./bridge reload      只热重载扩展
+#   ./bridge logs        宿主日志 + 扩展日志
+#   ./bridge test        端到端自检
+#   ./bridge uninstall   卸载
+
+set -uo pipefail
+
+REPO="$(cd "$(dirname "$0")" && pwd)"
+EXT_DIR="$HOME/dsh-bridge-extension"
+BRIDGE="$HOME/.dsh/chrome-bridge"
+CB="$HOME/.dsh/bin/cb"
+
+repo_ver() { python3 -c "import json;print(json.load(open('$REPO/extension/manifest.json'))['version'])" 2>/dev/null || echo '?'; }
+inst_ver() { python3 -c "import json;print(json.load(open('$EXT_DIR/manifest.json'))['version'])" 2>/dev/null || echo '未安装'; }
+
+case "${1:-help}" in
+  install)
+    exec "$REPO/install.sh"
+    ;;
+
+  update)
+    echo "同步代码 → $EXT_DIR"
+    mkdir -p "$EXT_DIR" "$BRIDGE/host" "$HOME/.dsh/bin"
+    cp -R "$REPO/extension/." "$EXT_DIR/"
+    cp "$REPO/host/host.js" "$REPO/host/run.sh" "$BRIDGE/host/"
+    cp "$REPO/bin/cb" "$CB"
+    chmod +x "$CB" "$BRIDGE/host/run.sh"
+    echo "热重载扩展（v$(repo_ver)）…"
+    "$CB" reload 2>/dev/null || echo "  扩展没在跑，下次打开 Chrome 自动加载新代码"
+    sleep 1.5
+    "$CB" version 2>/dev/null || true
+    ;;
+
+  status)
+    echo "仓库版本:   v$(repo_ver)"
+    echo "已装版本:   v$(inst_ver)   ($EXT_DIR)"
+    printf "运行版本:   "; "$CB" version 2>/dev/null || echo "扩展没连上"
+    printf "连接状态:   "; "$CB" status 2>/dev/null || echo "宿主没在跑"
+    ;;
+
+  reload)
+    "$CB" reload
+    ;;
+
+  logs)
+    echo "── 扩展日志 ──"
+    "$CB" logs --limit 40 2>/dev/null || echo "(拿不到)"
+    echo
+    echo "── 宿主日志（最近 20 行）──"
+    tail -20 /tmp/dsh-bridge.log 2>/dev/null || echo "(没有)"
+    ;;
+
+  test)
+    echo "── 1. 连接 ──";      "$CB" status
+    echo "── 2. 扩展版本 ──";  "$CB" version
+    echo "── 3. 标签页 ──";    "$CB" tabs | head -3
+    echo "── 4. 读当前页标题 ──"
+    TITLE=$("$CB" eval active "document.title" 2>&1 | head -1)
+    echo "$TITLE"
+    echo "── 5. 截图 ──"
+    "$CB" shot active --out /tmp/dsh-selftest.png
+    ls -la /tmp/dsh-selftest.png 2>/dev/null | awk '{print $5" bytes"}'
+    ;;
+
+  uninstall)
+    exec "$REPO/install.sh" --uninstall
+    ;;
+
+  *)
+    sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+    ;;
+esac

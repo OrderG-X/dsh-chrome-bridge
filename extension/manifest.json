@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "DSH Bridge",
+  "version": "1.0.0",
+  "description": "DSH 原生浏览器控制桥：装一次永久可用，不需要点 Connect",
+  "minimum_chrome_version": "116",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAy/5qrBEU9vJMnvWth54ijTFX+8AgdiSK6l0k/jWey30rkhD3afOqEzPDryAKBhzwxHPacn/qN8kIjVsRNhUpyeA73PS7kDdwTsGqRLzNu6NZMr668eeAF5sdIZdJuDIf4B6tPRFGkcq7CYOBtEEmZuQrd6NQF7FmioZFvMJ4rPEcgvR2dAW+LaEp5AIQV5jNH9SOZynSfD6sWZsYCbL+vzr+pxQIj3UU2PSNfyQuX8gTxYlg/2WXLAcQ7lKFc82rD+v8oimDK08/aHeR8Zq6F+LY0gDOhpnu0tv+RzYCz0ToMGNPoolgnmyBm1iYYAGJCDD++z6OcbsXj4OSPMfvAQIDAQAB",
+  "permissions": [
+    "debugger",
+    "tabs",
+    "alarms",
+    "nativeMessaging",
+    "storage"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  }
+}

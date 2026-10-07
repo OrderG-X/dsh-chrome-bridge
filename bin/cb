@@ -1,0 +1,269 @@
+#!/usr/bin/env node
+/**
+ * cb — DSH Bridge 命令行
+ *
+ * 用法速查（<tab> 可以写 active，省略时默认 active）：
+ *   cb status
+ *   cb tabs
+ *   cb eval   <tab> <js...>
+ *   cb click  <tab> <x> <y>
+ *   cb click-el   <tab> <选择器>
+ *   cb click-text <tab> <文字>
+ *   cb type   <tab> <文字> [--into <选择器>]
+ *   cb key    <tab> <按键> [--times N]      例：cb key active Enter / cb key active "meta+a"
+ *   cb nav    <tab> <url>
+ *   cb shot   [tab] [--out 路径] [--format png|jpeg]
+ *   cb cursor <tab> move|click|hide [x] [y]
+ *   cb open   <url> / cb close <tab> / cb attach|detach <tab>
+ *   cb cdp    <tab> <方法> [json参数]
+ *   cb logs / cb console [tab]
+ *   cb version / cb reload      （改完扩展代码用它热重载，不用点 Chrome 刷新）
+ *
+ * 任何命令加 --json 出原始 JSON。
+ */
+
+import net from 'node:net'
+import fs from 'node:fs'
+import path from 'node:path'
+import os from 'node:os'
+import crypto from 'node:crypto'
+
+const SOCK = process.env.DSH_BRIDGE_SOCK || '/tmp/dsh-bridge.sock'
+const TOKEN_FILE = process.env.DSH_BRIDGE_TOKEN || '/tmp/dsh-bridge.token'
+
+const argv = process.argv.slice(2)
+const JSON_OUT = argv.includes('--json')
+const positional = []
+const flags = {}
+for (let i = 0; i < argv.length; i++) {
+  const a = argv[i]
+  if (a === '--json') continue
+  if (a.startsWith('--')) {
+    const k = a.slice(2)
+    const next = argv[i + 1]
+    if (next !== undefined && !next.startsWith('--')) { flags[k] = next; i++ }
+    else flags[k] = true
+  } else positional.push(a)
+}
+
+function die(msg) {
+  console.error('cb: ' + msg)
+  process.exit(1)
+}
+
+function readToken() {
+  try { return fs.readFileSync(TOKEN_FILE, 'utf8').trim() } catch { return null }
+}
+
+function call(op, args = {}) {
+  return new Promise((resolve, reject) => {
+    const token = readToken()
+    if (!fs.existsSync(SOCK)) {
+      return reject(new Error(`宿主没在跑（找不到 ${SOCK}）。Chrome 开着吗？扩展装了吗？`))
+    }
+    const id = crypto.randomUUID()
+    const sock = net.connect(SOCK)
+    let acc = ''
+    let done = false
+    const finish = (fn, v) => { if (!done) { done = true; try { sock.destroy() } catch {}; fn(v) } }
+    sock.setEncoding('utf8')
+    sock.on('connect', () => sock.write(JSON.stringify({ token, id, op, args }) + '\n'))
+    sock.on('data', (d) => {
+      acc += d
+      const i = acc.indexOf('\n')
+      if (i < 0) return
+      let msg
+      try { msg = JSON.parse(acc.slice(0, i)) } catch (e) { return finish(reject, new Error('宿主回了坏 JSON')) }
+      if (msg.ok) finish(resolve, msg.result)
+      else finish(reject, new Error(msg.error || '未知错误'))
+    })
+    sock.on('error', (e) => finish(reject, new Error(`连不上宿主：${e.message}`)))
+    sock.on('close', () => finish(reject, new Error('宿主连接被关掉了')))
+    setTimeout(() => finish(reject, new Error('等宿主超时（60s）')), 60000)
+  })
+}
+
+async function resolveTab(spec) {
+  if (spec && spec !== 'active') return Number(spec)
+  const tabs = await call('tabs')
+  const act = tabs.find(t => t.active)
+  if (!act) throw new Error('没有活动标签页')
+  return act.id
+}
+
+function cursorScript() {
+  const cands = [
+    process.env.DSH_CURSOR_JS,
+    path.join(os.homedir(), '.dsh/chrome-cursor/in-page-cursor.js'),
+    path.join(path.dirname(new URL(import.meta.url).pathname), '../scratch/in-page-cursor.js'),
+  ].filter(Boolean)
+  for (const p of cands) {
+    try { return fs.readFileSync(p, 'utf8') } catch {}
+  }
+  throw new Error('找不到 in-page-cursor.js（可用 DSH_CURSOR_JS 指定）')
+}
+
+function out(human, raw) {
+  if (JSON_OUT) console.log(JSON.stringify(raw, null, 2))
+  else console.log(human)
+}
+
+// ── 命令分发 ────────────────────────────────────────────────────────────────
+
+const [cmd, ...rest] = positional
+
+const USAGE = `cb <命令> [参数]     用 cb help 看完整用法`
+
+async function main() {
+  if (!cmd || cmd === 'help' || flags.help) {
+    console.log(fs.readFileSync(new URL(import.meta.url).pathname, 'utf8').split('*/')[0].replace(/^\/\*\*?/, '').replace(/^ \* ?/gm, '').trim())
+    return
+  }
+
+  switch (cmd) {
+    case 'status': {
+      const s = await call('status')
+      out(`宿主 pid ${s.pid} | 扩展连接: ${s.extConnected ? '✅' : '❌'} | socket ${s.socket}`, s)
+      return
+    }
+    case 'version': {
+      const r = await call('version')
+      out(`扩展 v${r.version}  id ${r.id}`, r)
+      return
+    }
+    case 'reload': {
+      const r = await call('reload')
+      out('扩展已触发重载（1 秒后再跑 cb status 确认）', r)
+      return
+    }
+    case 'tabs': {
+      const tabs = await call('tabs')
+      const lines = tabs.map(t => `${t.active ? '*' : ' '} ${String(t.id).padStart(5)} ${t.attached ? '🔗' : '  '} ${(t.title || '').slice(0, 48)} — ${t.url.slice(0, 70)}`)
+      out(lines.join('\n'), tabs)
+      return
+    }
+    case 'find': {
+      const pat = (rest[0] || '').toLowerCase()
+      const tabs = (await call('tabs')).filter(t => (t.title || '').toLowerCase().includes(pat) || (t.url || '').toLowerCase().includes(pat))
+      out(tabs.map(t => `${String(t.id).padStart(5)} ${t.title} — ${t.url}`).join('\n') || '(没有匹配的标签页)', tabs)
+      return
+    }
+    case 'eval': {
+      const [tabSpec, ...jsParts] = rest
+      let expr = flags.file ? fs.readFileSync(String(flags.file), 'utf8') : jsParts.join(' ')
+      if (!expr) die('用法: cb eval <tab> <js>')
+      const tabId = await resolveTab(tabSpec)
+      const r = await call('eval', { tabId, expression: expr })
+      out(typeof r.value === 'string' ? r.value : JSON.stringify(r.value, null, 2), r)
+      return
+    }
+    case 'cdp': {
+      const [tabSpec, method, paramsJson] = rest
+      if (!method) die('用法: cb cdp <tab> <方法> [json]')
+      const tabId = await resolveTab(tabSpec)
+      const r = await call('cdp', { tabId, method, params: paramsJson ? JSON.parse(paramsJson) : {} })
+      out(JSON.stringify(r.result, null, 2), r)
+      return
+    }
+    case 'nav': {
+      const [tabSpec, url] = rest
+      if (!url) die('用法: cb nav <tab> <url>')
+      const tabId = await resolveTab(tabSpec)
+      const r = await call('nav', { tabId, url, wait: flags.nowait ? false : true })
+      out(`已到 ${r.url}${r.title ? ' — ' + r.title : ''}`, r)
+      return
+    }
+    case 'click': {
+      const [tabSpec, x, y] = rest
+      if (x === undefined) die('用法: cb click <tab> <x> <y>')
+      const tabId = await resolveTab(tabSpec)
+      const r = await call('click', { tabId, x: Number(x), y: Number(y), clickCount: Number(flags.count || 1) })
+      out(`点了 (${r.x}, ${r.y})`, r)
+      return
+    }
+    case 'click-el': {
+      const [tabSpec, sel] = rest
+      if (!sel) die('用法: cb click-el <tab> <选择器>')
+      const tabId = await resolveTab(tabSpec)
+      const r = await call('clickEl', { tabId, selector: sel })
+      out(`点了 ${r.target.tag}「${r.target.text}」 @ (${r.x}, ${r.y})`, r)
+      return
+    }
+    case 'click-text': {
+      const [tabSpec, ...txt] = rest
+      const text = txt.join(' ')
+      if (!text) die('用法: cb click-text <tab> <文字>')
+      const tabId = await resolveTab(tabSpec)
+      const r = await call('clickText', { tabId, text, exact: !flags.fuzzy, index: Number(flags.index || 0) })
+      out(`点了 ${r.target.tag}「${r.target.text}」 @ (${r.x}, ${r.y})`, r)
+      return
+    }
+    case 'type': {
+      const [tabSpec, ...txt] = rest
+      const text = txt.join(' ')
+      const tabId = await resolveTab(tabSpec)
+      const r = await call('type', { tabId, text, selector: flags.into || undefined })
+      out(`输入了 ${r.typed} 个字符`, r)
+      return
+    }
+    case 'key': {
+      const [tabSpec, key] = rest
+      if (!key) die('用法: cb key <tab> <按键>，例 cb key active Enter / cb key active "meta+a"')
+      const tabId = await resolveTab(tabSpec)
+      const r = await call('key', { tabId, key, times: Number(flags.times || 1) })
+      out(`按了 ${key}${r.times > 1 ? ` ×${r.times}` : ''}`, r)
+      return
+    }
+    case 'shot': {
+      const tabSpec = rest[0] && !/^\d+$/.test(rest[0]) === false ? rest[0] : rest[0]
+      const tabId = await resolveTab(rest[0])
+      const format = flags.format === 'jpeg' ? 'jpeg' : 'png'
+      const r = await call('shot', { tabId, format, quality: flags.quality ? Number(flags.quality) : undefined })
+      const file = String(flags.out || `/tmp/dsh-shot-${Date.now()}.${format === 'jpeg' ? 'jpg' : 'png'}`)
+      fs.writeFileSync(file, Buffer.from(r.data, 'base64'))
+      out(file, { file, format, url: r.url, title: r.title, bytes: fs.statSync(file).size })
+      return
+    }
+    case 'cursor': {
+      const [tabSpec, action, x, y] = rest
+      if (!action) die('用法: cb cursor <tab> move|click|hide [x] [y]')
+      const tabId = await resolveTab(tabSpec)
+      const r = await call('cursor', { tabId, script: cursorScript(), action, x: Number(x), y: Number(y) })
+      out(`光标 ${action}${x !== undefined ? ` → (${x}, ${y})` : ''}`, r)
+      return
+    }
+    case 'open': {
+      const r = await call('open', { url: rest[0] })
+      out(`开了新标签 ${r.tabId}：${r.url}`, r)
+      return
+    }
+    case 'close': {
+      const tabId = await resolveTab(rest[0])
+      const r = await call('close', { tabId })
+      out(`关了 ${r.closed}`, r)
+      return
+    }
+    case 'attach':
+    case 'detach': {
+      const tabId = await resolveTab(rest[0])
+      const r = await call(cmd, { tabId })
+      out(`${cmd} ${tabId} → ${r.attached ? '已连接' : '已断开'}`, r)
+      return
+    }
+    case 'logs': {
+      const r = await call('logs', { limit: Number(flags.limit || 60) })
+      out(r.lines.join('\n') || '(空)', r)
+      return
+    }
+    case 'console': {
+      const tabId = rest[0] ? await resolveTab(rest[0]) : undefined
+      const r = await call('console', { limit: Number(flags.limit || 40), tabId })
+      out(r.items.map(i => `[${i.level}] ${i.text}`).join('\n') || '(空)', r)
+      return
+    }
+    default:
+      die(`不认识命令 "${cmd}"。${USAGE}`)
+  }
+}
+
+main().then(() => process.exit(0), e => die(e.message))
