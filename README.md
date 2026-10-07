@@ -74,6 +74,23 @@ cb reload / cb version                     # 热重载 / 看扩展版本
 `active` 可以换成具体 tabId。任何命令加 `--json` 出原始 JSON。
 **点击和输入默认会带动页内光标**（飞过去 → 涟漪 → 真点击），加 `--no-cursor` 关掉。
 
+## DSH 插件（原生工具）
+
+`plugin/` 是一个 DSH bundle，装进 profile 后 DSH 直接多出 **9 个原生工具**：
+
+```
+browser_tabs  browser_read  browser_click  browser_input  browser_nav
+browser_screenshot  browser_eval  browser_wait  browser_dialog
+```
+
+装了插件就不用走 bash 调 `cb`：模型直接调工具，截图还能**当图片返回**给模型看。
+插件本身只是个 socket 客户端，协议和 `cb` 完全一样，所以两边共用同一个宿主和扩展。
+
+安装（GUI，一次性）：侧栏「插件」→「添加插件」→ 粘贴 `/Users/guo/Projects/browser-agent-kit/plugin` → 安装 → 立即启用。
+**装完要重启 DSH**（新 bundle 不会热加载，实测 app 不重启不会 import 插件模块）。
+
+> CLI 的 `dsh plugin add` 对 desktop profile 无效——它被 Electron app 独占。
+
 ## DSH 技能
 
 `install.sh` 会装一个 `browser` 技能到 `~/.dsh/skills/browser/SKILL.md`，

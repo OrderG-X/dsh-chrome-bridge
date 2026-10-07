@@ -1,0 +1,22 @@
+{
+  "name": "@local/dsh-browser-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "原生 browser_* 工具：直接操作用户正在用的 Chrome（读页面/点击/输入/截图/跑 JS）",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json",
+    "./icon.svg": "./icon.svg"
+  },
+  "icon": "./icon.svg",
+  "meta": {
+    "title": "Browser Bridge",
+    "description": "把 DSH 接到真实 Chrome：原生 browser_* 工具，不用每次点连接"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
