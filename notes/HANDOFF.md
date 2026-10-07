@@ -286,3 +286,45 @@ plugin/
 
 
 
+
+---
+
+# 插件为什么一开始没加载（真因，2026-10-07 11:0x）
+
+## 结论：插件代码没问题，是模块 import 挂了
+
+排查过程（每一轮都重启 app 太贵，所以用临时 profile 在 CLI 里验）：
+
+```bash
+cp -R ~/.dsh/profiles/headless ~/.dsh/profiles/plugtest
+dsh plugin --profile plugtest add /Users/guo/Projects/browser-agent-kit/plugin   # 非 app 独占的 profile 可以装
+dsh --profile plugtest "调用 browser_tabs ..."                                   # headless 起一次，看 trace 日志
+```
+
+**这样不用动用户的 app 就能验证插件**，省掉反复重启。
+
+## 两个坑
+
+1. **`@deepseek-ai/dsh-tools` 在 profile 上下文解析不到**（裸 node 实测 ERR_MODULE_NOT_FOUND）。
+   静态 import 它 → 整个插件模块加载失败 → 行挂掉，而错误只在 app 进程里，外面看不见。
+   **修法：插件零外部依赖**，工具对象按 dsh-tools 的产出形状手搓
+   （属性表 → JSON Schema；output.schema 直接写 JSON Schema 的 `required: [...]` 数组形式）。
+2. **顶层 await 也不要写**（动态 import 兜底那版就是栽在这）——
+   loader 怎么加载模块不完全可控，能不用就不用。
+
+## 加自检日志
+
+插件模块顶部和 apply() 里往 `/tmp/dsh-browser-bridge.log` 写一行。
+"插件到底有没有被 import" 这个问题，看一眼日志就有答案，比 lsof 猜靠谱
+（lsof 只在文件句柄还开着时才有输出，Node import 完就关了，**不能用来判断有没有加载过**）。
+
+## 最终验证（headless，全链路）
+
+```
+2026-10-07T03:01:06 模块已加载 / apply 被调用 / 已注册 9 个工具
+```
+agent 回答工具列表：browser_click, browser_dialog, browser_eval, browser_input,
+browser_nav, browser_read, browser_screenshot, browser_tabs, browser_wait
+
+真调 `browser_tabs` → 读到用户真实 Chrome 的标签页 ✅
+（DSH 工具 → socket → 宿主 → 扩展 → CDP → 真 Chrome 全线打通）

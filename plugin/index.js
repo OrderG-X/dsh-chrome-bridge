@@ -16,24 +16,21 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 
 /**
- * DSH 正常情况下能把随包发布的模块（@deepseek-ai/*）从安装目录解析出来。
- * 但万一解析不到，不能让整个插件因为一行 import 就加载失败——这里兜底一个等价实现，
- * 它做的正是 dsh-tools 里 defineTool 的 schema 转换（属性表 → JSON Schema）。
+ * 这里刻意不 import 任何外部包——不碰 `@deepseek-ai/dsh-tools`。
+ *
+ * 原因：profile 上下文里那个包解析不到（裸 node 实测 ERR_MODULE_NOT_FOUND），
+ * 一旦解析失败，整个插件模块加载失败、行直接挂掉，而且错误只留在 app 进程里，
+ * 外面完全看不到。所以工具对象在这里按 dsh-tools 的产出形状手搓：
+ *   parameters —— 属性表编译成 JSON Schema（等价 parameterSchemaSpecToJsonSchema）
+ *   output     —— { schema, render }，schema 直接写成 JSON Schema
  */
-let defineTool
-try {
-  ({ defineTool } = await import('@deepseek-ai/dsh-tools'))
-} catch {
-  defineTool = (options) => ({
-    name: options.name,
-    description: options.description,
-    parameters: specToJsonSchema(options.parameters),
-    output: { schema: options.output.schema, render: options.output.render },
-    ...(options.presentCall ? { presentCall: options.presentCall } : {}),
-    execute: options.execute,
-  })
+
+const TRACE = '/tmp/dsh-browser-bridge.log'
+function trace(line) {
+  try { fs.appendFileSync(TRACE, `${new Date().toISOString()} ${line}\n`) } catch {}
 }
 
+/** 属性表 → JSON Schema：{ [name]: { type, required?, description?, ... } } */
 function specToJsonSchema(spec) {
   const properties = {}
   const required = []
@@ -43,6 +40,18 @@ function specToJsonSchema(spec) {
     if (isRequired) required.push(key)
   }
   return { type: 'object', properties, ...(required.length ? { required } : {}) }
+}
+
+/** 等价于 dsh-tools 的 defineTool（只用它的产出形状，不依赖它） */
+function defineTool(options) {
+  return {
+    name: options.name,
+    description: options.description,
+    parameters: specToJsonSchema(options.parameters),
+    output: { schema: options.output.schema, render: options.output.render },
+    ...(options.presentCall ? { presentCall: options.presentCall } : {}),
+    execute: options.execute,
+  }
 }
 
 export const name = 'browser-bridge'
@@ -114,7 +123,8 @@ const textOutput = {
   schema: {
     type: 'object',
     additionalProperties: false,
-    properties: { text: { type: 'string', required: true } },
+    properties: { text: { type: 'string' } },
+    required: ['text'],
   },
   render: (_args, value) => [{ type: 'text', text: value.text }],
 }
@@ -128,6 +138,7 @@ const present = (title) => (args) => ({ card: 'generic', title, kind: 'other', r
 const shotRefs = new Map()
 
 export function apply(ctx, config) {
+  trace('apply 被调用')
   const tools = [
     // ── 标签页 ──────────────────────────────────────────────────────────────
     defineTool({
@@ -361,9 +372,10 @@ export function apply(ctx, config) {
           type: 'object',
           additionalProperties: false,
           properties: {
-            text: { type: 'string', required: true },
-            token: { type: 'string', required: true },
+            text: { type: 'string' },
+            token: { type: 'string' },
           },
+          required: ['text', 'token'],
         },
         render: (_args, value) => {
           const blocks = [{ type: 'text', text: value.text }]
@@ -470,6 +482,14 @@ export function apply(ctx, config) {
   ]
 
   for (const tool of tools) {
-    ctx.tools.register(tool)
+    try {
+      ctx.tools.register(tool)
+    } catch (e) {
+      trace(`注册 ${tool.name} 失败: ${e && e.message}`)
+      throw e
+    }
   }
+  trace(`已注册 ${tools.length} 个工具: ${tools.map((t) => t.name).join(', ')}`)
 }
+
+trace('模块已加载')
