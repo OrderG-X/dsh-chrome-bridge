@@ -78,10 +78,17 @@ cb tabs
 
 Without this you drive the bridge from a shell (`cb …`). With it, DSH gets **9 native tools** (`browser_tabs`, `browser_read`, `browser_click`, `browser_input`, `browser_nav`, `browser_screenshot`, `browser_eval`, `browser_wait`, `browser_dialog`), and screenshots come back as **images the model actually sees**.
 
-DSH sidebar → **Plugins** → **Add plugin** → paste the absolute path to the `plugin/` folder in this repo → Install → Enable → **restart DSH**.
+DSH sidebar → **Plugins** → **Add plugin** → paste either of these → Install → Enable → **restart DSH**:
+
+```
+/absolute/path/to/dsh-chrome-bridge/plugin          # local checkout (recommended for development)
+github:OrderG-X/dsh-chrome-bridge#path:plugin       # straight from GitHub, no clone needed
+```
 
 > A freshly installed bundle is not hot-loaded; the app must be restarted once.
 > `dsh plugin add` from the CLI refuses the app-managed profile — use the GUI.
+> Plugin updates are not automatic in DSH yet: to upgrade, uninstall and install again.
+> A **local path** install is a `link:`, so a `git pull` is enough there.
 
 ---
 

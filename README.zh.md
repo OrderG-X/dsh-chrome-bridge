@@ -78,10 +78,17 @@ cb tabs
 
 不装也能用，只是要从命令行敲 `cb`。装了之后 DSH 多出 **9 个原生工具**（`browser_tabs`、`browser_read`、`browser_click`、`browser_input`、`browser_nav`、`browser_screenshot`、`browser_eval`、`browser_wait`、`browser_dialog`），而且截图会**当图片返回**，模型真的看得见。
 
-DSH 侧栏 → **插件** → **添加插件** → 粘贴本仓库 `plugin/` 目录的绝对路径 → 安装 → 启用 → **重启 DSH**。
+DSH 侧栏 → **插件** → **添加插件** → 粘贴下面任一个 → 安装 → 启用 → **重启 DSH**：
+
+```
+/本仓库绝对路径/plugin                          # 本地路径（开发时推荐）
+github:OrderG-X/dsh-chrome-bridge#path:plugin   # 直接装 GitHub，不用 clone
+```
 
 > 新装的 bundle 不会热加载，必须重启一次 app。
 > CLI 的 `dsh plugin add` 对 app 独占的 profile 会拒绝，走 GUI。
+> DSH 目前**不支持插件自动更新**：升级要卸载后重装。
+> 用**本地路径**装的是 `link:`，所以 `git pull` 一下就够。
 
 ---
 
