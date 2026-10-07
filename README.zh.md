@@ -176,6 +176,17 @@ dsh-chrome-bridge uninstall
 - Chrome 137+ 移除了 `--load-extension`，首次必须在 `chrome://extensions` 手动加载
 - **不走 Chrome 应用商店** —— `debugger` 权限在那里基本不可能过审
 
+## 🔎 相关项目
+
+DSH 浏览器插件这个方向已经挺热闹，值得一看：
+
+- [dsh-plugin-browser-use](https://github.com/fatmind/dsh-plugin-browser-use) —— 复用已登录的 Chrome，暴露 `wc3_*` 工具
+- [dsh-plugin-browser](https://github.com/menotbobbybrown/dsh-plugin-browser) —— 基于 Playwright 的浏览器自动化插件
+- [dsh-browser-bridge](https://github.com/liyongzheng666/dsh-browser-bridge) —— localhost WebSocket 桥 + Firefox 扩展
+- [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) —— DSH 插件精选目录
+
+**这里的区别**：**不开监听端口**（走 native messaging）、**真实 CDP 输入事件**（`chrome.debugger`）、**页内光标会出现在截图里**。
+
 ## 🤝 贡献
 
 欢迎 issue 和 PR。

@@ -178,6 +178,17 @@ Be honest about what this is: **the extension can read and control every page yo
 - Chrome 137+ removed `--load-extension`, so the very first load must go through `chrome://extensions`.
 - Distributed **unpacked**, not through the Chrome Web Store — the `debugger` permission is not realistically approvable there.
 
+## 🔎 Related projects
+
+The DSH browser-plugin space is already busy — these are worth a look:
+
+- [dsh-plugin-browser-use](https://github.com/fatmind/dsh-plugin-browser-use) — reuses your logged-in Chrome, exposes `wc3_*` tools
+- [dsh-plugin-browser](https://github.com/menotbobbybrown/dsh-plugin-browser) — Playwright-based browser automation plugin
+- [dsh-browser-bridge](https://github.com/liyongzheng666/dsh-browser-bridge) — localhost WebSocket bridge with a Firefox extension
+- [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) — the curated catalog of DSH plugins
+
+What is different here: **no listening port** (native messaging), **real CDP input events** via `chrome.debugger`, and an **on-page cursor that shows up in screenshots**.
+
 ## 🤝 Contributing
 
 Issues and PRs welcome.
