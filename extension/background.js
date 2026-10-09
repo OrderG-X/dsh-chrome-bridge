@@ -454,6 +454,31 @@ const OPS = {
       if (!hit.length) return null;
       hit.sort((a, b) => { const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect(); return ra.width * ra.height - rb.width * rb.height; });
       const el = hit[Math.min(${Number(index) || 0}, hit.length - 1)];
+      // 元素框常常比可见按钮大得多（<a> 里塞满空白），点框中心会落在按钮外面。
+      // 所以先找承载这段文字的文本节点，用 Range 拿它的**精确**位置。
+      const textRect = (root, needle) => {
+        const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        let n;
+        while ((n = w.nextNode())) {
+          const t = __dsh_norm(n.nodeValue || '');
+          if (!t) continue;
+          if (t === needle || t.includes(needle)) {
+            const rg = document.createRange();
+            rg.selectNodeContents(n);
+            const rc = rg.getBoundingClientRect();
+            if (rc.width > 0 && rc.height > 0) return rc;
+          }
+        }
+        return null;
+      };
+      const tr = textRect(el, want);
+      if (tr) {
+        const pr = el.getBoundingClientRect();
+        return { x: Math.round(tr.x + tr.width / 2), y: Math.round(tr.y + tr.height / 2),
+                 text: (el.innerText || '').trim().slice(0, 60), tag: el.tagName.toLowerCase(),
+                 rect: [Math.round(pr.x), Math.round(pr.y), Math.round(pr.width), Math.round(pr.height)],
+                 textRect: [Math.round(tr.x), Math.round(tr.y), Math.round(tr.width), Math.round(tr.height)] };
+      }
       return __dsh_point(el);
     `)
     const hit = await clickPoint(tabId, pt.x, pt.y, { cursor: { script, label: `点击 ${pt.text || pt.tag}` } })

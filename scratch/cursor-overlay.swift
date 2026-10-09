@@ -158,6 +158,7 @@ final class ScootAnimator {
     var stretch: CGFloat = 1
     var tilt: CGFloat = 0
     var blur: CGFloat = 0
+    var press: CGFloat = 1        // 点击时均匀缩小；跟"移动拉伸"分开，不然会抽长
 
     func jump(to p: CGPoint) { pos = p; target = p; vel = .zero; live = true }
     func move(to p: CGPoint) {
@@ -217,6 +218,9 @@ final class OverlayController: NSObject {
         view.wantsLayer = true                 // 拉伸/模糊要靠 layer
         view.layer?.masksToBounds = false
         view.layer?.anchorPoint = CGPoint(x: 0, y: 0)
+        // 视图是 flipped 的（原点左上），但 CALayer 默认原点在左下。
+        // 不打开这个，缩放支点 (0,0) 会落到左下角，尖端还是会漂。
+        view.layer?.isGeometryFlipped = true
     }
 
     // Quartz 全局坐标（左上原点，y 向下）→ AppKit 屏幕坐标（左下原点）
@@ -266,11 +270,17 @@ final class OverlayController: NSObject {
         // 静止时轻轻呼吸（Codex 的光标不是死的）
         let atRest = hypot(anim.vel.x, anim.vel.y) < 6
         let breath = atRest ? 1 + 0.018 * sin(Double(tickCount) / 60.0 * 2.2) : 1.0
-        let pivot = CGPoint(x: cursorSize * 0.30, y: cursorSize * 0.30)
+        // 支点必须在**尖端**：缩放时瞄准点纹丝不动。
+        // 之前放在 (0.3,0.3) 导致点击时整支箭头朝左上抽长 —— 看着就像跑偏了。
+        // CALayer 原点在左下（isGeometryFlipped 对这种手动 transform 不生效），
+        // 视觉上的"左上角"= layer 坐标的 (0, height)
+        let pivot = CGPoint(x: 0, y: cursorSize * cursorAspect)
         var t = CGAffineTransform.identity
         t = t.translatedBy(x: pivot.x, y: pivot.y)
         t = t.rotated(by: anim.tilt)
-        t = t.scaledBy(x: anim.stretch * CGFloat(breath), y: 1 / (anim.stretch * squashFactor()) * CGFloat(breath))
+        let sx = anim.stretch * CGFloat(breath) * anim.press
+        let sy = (1 / (anim.stretch * squashFactor())) * CGFloat(breath) * anim.press
+        t = t.scaledBy(x: sx, y: sy)
         t = t.translatedBy(x: -pivot.x, y: -pivot.y)
         CATransaction.begin(); CATransaction.setDisableActions(true)
         layer.setAffineTransform(t)
@@ -289,11 +299,13 @@ final class OverlayController: NSObject {
     func press() {
         view.pressed = true
         view.needsDisplay = true
-        anim.stretch = 0.80                    // 点击时压一下
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.11) {
+        anim.press = 0.88                      // 点击时均匀压一下（幅度从 0.80 收到 0.88）
+        // 按住时长可调：调试用 DSH_CURSOR_PRESS_MS=1200 才截得到关键帧
+        let holdMs = Double(ProcessInfo.processInfo.environment["DSH_CURSOR_PRESS_MS"] ?? "110") ?? 110
+        DispatchQueue.main.asyncAfter(deadline: .now() + holdMs / 1000.0) {
             self.view.pressed = false
             self.view.needsDisplay = true
-            self.anim.stretch = 1.0
+            self.anim.press = 1.0
         }
     }
 
