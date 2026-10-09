@@ -16,7 +16,8 @@
  *   cb network [tab] [--limit 40] [--filter 关键词] [--reload 先刷新再看] [--clear]
  *   cb record  [tab] [--ms 5000] [--out 目录] [--width 900]   # 录一段 screencast 帧（做演示 GIF 用）
  *   cb cursor <tab> move|click|hide [x] [y]
- *   cb open   <url> / cb close <tab> / cb attach|detach <tab>
+ *   cb open   <url> [--front]            默认**后台**开页（不抢你当前标签页）
+ *   cb close <tab> / cb attach|detach <tab>
  *   cb cdp    <tab> <方法> [json参数]
  *   cb text   <tab> [选择器]              页面可见文字（默认整页）
  *   cb html   <tab> [选择器]              外层 HTML
@@ -369,8 +370,10 @@ async function main() {
       return
     }
     case 'open': {
-      const r = await call('open', { url: rest[0] })
-      out(`开了新标签 ${r.tabId}：${r.url}`, r)
+      // 默认后台开页 —— 不抢用户当前标签页。想看它跳出来就加 --front
+      const active = !!flags.front
+      const r = await call('open', { url: rest[0], active })
+      out(`开了新标签 ${r.tabId}（${active ? '前台' : '后台，不抢焦点'}）：${r.url}`, r)
       return
     }
     case 'close': {

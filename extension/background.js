@@ -390,8 +390,9 @@ const OPS = {
     return { tabId: Number(tabId), windowId: t.windowId }
   },
 
-  async open({ url, active = true }) {
-    const t = await chrome.tabs.create({ url, active })
+  async open({ url, active = false }) {
+    // 默认后台开页：DSH 干活不该顶掉用户正在看的标签页
+    const t = await chrome.tabs.create({ url, active: !!active })
     return { tabId: t.id, url: t.url }
   },
 

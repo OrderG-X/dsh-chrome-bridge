@@ -16,6 +16,8 @@
 //   * pointer-events:none —— 绝不挡住真实点击
 //   * 点击有涟漪 + 按压缩放 —— 一眼看出"它在点哪儿"
 //   * 会出现在截图里 —— 人和模型看到同一画面，可互相验证
+//   * 箭头形状和系统浮层光标同源：从 Codex Computer Use 的资源里描出来的，
+//     这里用半透明"雾状"版（对应 Codex 的 FogCursorStyle），跟桌面那个实心版区分开
 
 (() => {
   const ID = '__dsh_cursor__';
@@ -42,10 +44,7 @@
         .lbl.on{opacity:1}
         @keyframes rip{from{opacity:.95;transform:scale(.25)}to{opacity:0;transform:scale(1.9)}}
       </style>
-      <svg class="c" viewBox="0 0 30 30">
-        <path d="M2 1 L2 22 L7.6 16.6 L12 28.4 L17 26.1 L12.6 14.6 L20.4 14.2 Z"
-              fill="#4D6BFE" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>
-      </svg>
+      <img class="c" alt="" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHIAAABmCAYAAAAXmsXwAAABpUlEQVR4nO3by03DQBRA0QSlvlTCMmVkSSVu0FRgIQV/xtfn7CGRrt7oaRju8zzfOL+vo78A6xAyQsgIISOEjBAyQsgIISMeR3+BQb0P+tzXpz9oIiOEjHC0/uH5ve1d9PRzX+X3mMgIISNqR+v7dlEmMkLIiNrRutu2ORoTGSFkxChH62W3zbWYyAghI0Y5Wi+7ba7FREYIGbHV0WoL3ZmJjBAyYvOt1Ra6DxMZIWSEkBFCRggZMdxda9W00vvVJSYyQsgIR+vJ/utqiYmMEDJCyAghI4SMEDJCyAghIx6j3TF6UfAZExkhZMRjkLtE72D/yURGCBkx3J+xzr7lThu/BFhiIiOEjBjlaK1uua+9PshERggZMcrRuvqW+Bxsm92aiYwQMuKsR+vr5Nvs6kxkhJARQkYIGSFkhJARQkYIGXHWC4HD72Cng14CLDGREUJG1I7W10F3sLu9BFhiIiOEjBAyQsgIISOEjBAyQsiI2oXA6e5I12IiI4SMuM/ztZ7WV5nICCEjhIwQMkLICCEjhIwQMkLICCEjhIwQMkLICCFvDb/g5CgyqZ61wAAAAABJRU5ErkJggg==">
       <div class="r"></div>
       <div class="lbl"></div>`;
     document.documentElement.appendChild(host);
