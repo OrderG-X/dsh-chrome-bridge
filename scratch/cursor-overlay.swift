@@ -63,9 +63,27 @@ final class CursorView: NSView {
         return nil
     }()
 
+    // 流动的渐变帧（Codex 那种"活着"的感觉）：24 帧循环
+    static let frames: [NSImage] = {
+        let dir = NSString(string: "~/.dsh/share/cursor-frames").expandingTildeInPath
+        let fs = (try? FileManager.default.contentsOfDirectory(atPath: dir))?.filter { $0.hasSuffix(".png") }.sorted() ?? []
+        return fs.compactMap { NSImage(contentsOfFile: dir + "/" + $0) }
+    }()
+    var frameIdx = 0
+
     override var isFlipped: Bool { true }
     override func draw(_ dirtyRect: NSRect) {
         let b = bounds
+        if !CursorView.frames.isEmpty {
+            if let ctx = NSGraphicsContext.current?.cgContext {
+                ctx.saveGState()
+                ctx.translateBy(x: 0, y: b.height)
+                ctx.scaleBy(x: 1, y: -1)
+                CursorView.frames[frameIdx % CursorView.frames.count].draw(in: b, from: .zero, operation: .sourceOver, fraction: pressed ? 0.7 : 1.0)
+                ctx.restoreGState()
+            }
+            return
+        }
         if let img = CursorView.image {
             // isFlipped 的视图会把 NSImage 上下翻过来，箭头会倒着指 —— 翻回去再画
             if let ctx = NSGraphicsContext.current?.cgContext {
@@ -177,6 +195,7 @@ final class OverlayController: NSObject {
     var timer: Timer?
     let anim = ScootAnimator()
     var visible = false
+    var tickCount = 0
 
     override init() {
         let rect = NSRect(x: 0, y: 0, width: cursorSize, height: cursorSize * cursorAspect)
@@ -227,6 +246,11 @@ final class OverlayController: NSObject {
             guard let self = self else { t.invalidate(); return }
             let now = Date(); let dt = min(0.05, now.timeIntervalSince(last)); last = now
             self.anim.step(dt)
+            self.tickCount += 1
+            if self.tickCount % 5 == 0 {                       // ~12fps 的渐变流动
+                self.view.frameIdx += 1
+                self.view.needsDisplay = true
+            }
             self.applyTransform()
         }
         RunLoop.main.add(timer!, forMode: .common)
@@ -236,11 +260,14 @@ final class OverlayController: NSObject {
         panel.setFrameOrigin(anim.pos)
         guard let layer = view.layer else { return }
         // 支点在箭头尖（左上），所以绕支点缩放，看起来像"从尖端弹出去"
-        let pivot = CGPoint(x: cursorSize * 0.05, y: cursorSize * 0.05)
+        // 静止时轻轻呼吸（Codex 的光标不是死的）
+        let atRest = hypot(anim.vel.x, anim.vel.y) < 6
+        let breath = atRest ? 1 + 0.018 * sin(Double(tickCount) / 60.0 * 2.2) : 1.0
+        let pivot = CGPoint(x: cursorSize * 0.30, y: cursorSize * 0.30)
         var t = CGAffineTransform.identity
         t = t.translatedBy(x: pivot.x, y: pivot.y)
         t = t.rotated(by: anim.tilt)
-        t = t.scaledBy(x: anim.stretch, y: 1 / (anim.stretch * 1.0) * squashFactor())
+        t = t.scaledBy(x: anim.stretch * CGFloat(breath), y: 1 / (anim.stretch * squashFactor()) * CGFloat(breath))
         t = t.translatedBy(x: -pivot.x, y: -pivot.y)
         CATransaction.begin(); CATransaction.setDisableActions(true)
         layer.setAffineTransform(t)
