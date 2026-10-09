@@ -29,6 +29,13 @@ func argValue(_ name: String, _ fallback: String) -> String {
 
 let fifoPath = argValue("--fifo", "/tmp/dsh-cursor.fifo")
 let cursorSize = CGFloat(Double(argValue("--size", "30")) ?? 30)
+/// 箭头是竖的：面板按图片真实宽高比，别拉成正方形
+let cursorAspect: CGFloat = {
+    for p in [NSString(string: "~/.dsh/share/dsh-cursor-solid.png").expandingTildeInPath] {
+        if let img = NSImage(contentsOfFile: p), img.size.width > 0 { return img.size.height / img.size.width }
+    }
+    return 1.55
+}()
 // 空闲多久自己退出（秒）。不留常驻进程吃内存 —— 下次要用会被重新拉起。
 let idleSeconds = Double(argValue("--idle", "60")) ?? 60
 var lastActivity = Date()
@@ -60,7 +67,16 @@ final class CursorView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         let b = bounds
         if let img = CursorView.image {
-            img.draw(in: b, from: .zero, operation: .sourceOver, fraction: pressed ? 0.65 : 1.0)
+            // isFlipped 的视图会把 NSImage 上下翻过来，箭头会倒着指 —— 翻回去再画
+            if let ctx = NSGraphicsContext.current?.cgContext {
+                ctx.saveGState()
+                ctx.translateBy(x: 0, y: b.height)
+                ctx.scaleBy(x: 1, y: -1)
+                img.draw(in: b, from: .zero, operation: .sourceOver, fraction: pressed ? 0.65 : 1.0)
+                ctx.restoreGState()
+            } else {
+                img.draw(in: b, from: .zero, operation: .sourceOver, fraction: pressed ? 0.65 : 1.0)
+            }
             return
         }
         // 兜底：图片没了就画个简单的箭头，别让光标整个消失
@@ -163,7 +179,7 @@ final class OverlayController: NSObject {
     var visible = false
 
     override init() {
-        let rect = NSRect(x: 0, y: 0, width: cursorSize, height: cursorSize)
+        let rect = NSRect(x: 0, y: 0, width: cursorSize, height: cursorSize * cursorAspect)
         panel = NSPanel(contentRect: rect,
                         styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered,
