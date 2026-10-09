@@ -220,9 +220,12 @@ final class OverlayController: NSObject {
     }
 
     // Quartz 全局坐标（左上原点，y 向下）→ AppKit 屏幕坐标（左下原点）
+    /// Quartz 全局坐标（左上原点）→ AppKit 面板原点。
+    /// 注意：setFrameOrigin 定的是**左下角**，而光标尖端在图片**左上角**，
+    /// 所以要再减掉面板高度，否则光标会比实际点击位置高整整一个身位。
     func screenPoint(_ x: Double, _ y: Double) -> NSPoint {
         let screenH = NSScreen.screens.first?.frame.height ?? 0
-        return NSPoint(x: CGFloat(x), y: screenH - CGFloat(y))
+        return NSPoint(x: CGFloat(x), y: screenH - CGFloat(y) - cursorSize * cursorAspect)
     }
 
     func show(x: Double, y: Double, animate: Bool) {
