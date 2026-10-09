@@ -136,7 +136,22 @@ async function handle(msg) {
 
 // ── CDP 基础设施 ────────────────────────────────────────────────────────────
 
+// 标签页最后被用到的时间 —— 空闲了就断开，别让 Chrome 一直挂着"正在调试"提示条
+const lastUsed = new Map()
+const DETACH_IDLE_MS = 60_000
+
+async function detachIdle() {
+  const now = Date.now()
+  for (const tabId of [...attached]) {
+    if (now - (lastUsed.get(tabId) || 0) < DETACH_IDLE_MS) continue
+    try { await chrome.debugger.detach({ tabId }) } catch {}
+    attached.delete(tabId)
+    lastUsed.delete(tabId)
+  }
+}
+
 async function ensure(tabId) {
+  lastUsed.set(Number(tabId), Date.now())
   if (!attached.has(tabId)) {
     try {
       await chrome.debugger.attach({ tabId: Number(tabId) }, CDP_VERSION)
@@ -722,11 +737,12 @@ const OPS = {
 chrome.alarms.create('dsh-keepalive', { periodInMinutes: 0.5 })
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name !== 'dsh-keepalive') return
+  detachIdle()                       // 空闲超过 60 秒的标签页断开调试
   if (!port) connect()
   else post({ id: 'ka-' + Date.now(), ok: true, keepalive: true })
 })
 
 chrome.runtime.onStartup.addListener(connect)
 chrome.runtime.onInstalled.addListener(connect)
-chrome.tabs.onRemoved.addListener((tabId) => attached.delete(tabId))
+chrome.tabs.onRemoved.addListener((tabId) => { attached.delete(tabId); lastUsed.delete(tabId) })
 connect()
