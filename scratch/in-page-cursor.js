@@ -39,8 +39,9 @@
            -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
            animation:dshflow 3.2s ease-in-out infinite alternate;
            transition:transform .45s cubic-bezier(.25,.65,.35,1), scale .12s ease;
+           transform-origin:1px 1px;
            filter:drop-shadow(0 2px 3px rgba(0,0,0,.5));will-change:transform}
-        .c.press{scale:.8}
+        .c.press{scale:.88}
         .r{position:fixed;width:30px;height:30px;margin:-13px 0 0 -13px;border-radius:50%;
            border:3px solid #4D6BFE;opacity:0;pointer-events:none}
         .r.on{animation:rip .5s ease-out}
