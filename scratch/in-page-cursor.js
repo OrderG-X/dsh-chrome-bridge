@@ -14,6 +14,7 @@
 //   * Shadow DOM 隔离 —— 不会和页面自己的 CSS 打架
 //   * position:fixed + 最高 z-index —— 浮在页面最上层，跟着 viewport
 //   * pointer-events:none —— 绝不挡住真实点击
+//   * 移动时沿运动方向拉伸（跟桌面浮层同一套 scoot 手感），落位收回
 //   * 点击有涟漪 + 按压缩放 —— 一眼看出"它在点哪儿"
 //   * 会出现在截图里 —— 人和模型看到同一画面，可互相验证
 //   * 箭头形状和系统浮层光标同源：从 Codex Computer Use 的资源里描出来的，
@@ -56,8 +57,30 @@
   const lbl = sr.querySelector('.lbl');
   let labelTimer = 0;
 
+  // 移动：跟桌面浮层同一套 scoot 手感 —— 沿运动方向拉伸，落位收回
+  let lastX = null, lastY = null, settleTimer = 0;
+  const place = (x, y) => { cur.style.transform = `translate(${x}px, ${y}px)`; };
   const move = (x, y) => {
-    cur.style.transform = `translate(${x}px, ${y}px)`;
+    const dx = lastX === null ? 0 : x - lastX;
+    const dy = lastY === null ? 0 : y - lastY;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 8) {
+      const ang = Math.atan2(dy, dx) * 180 / Math.PI;
+      const stretch = dist > 200 ? 1.28 : 1 + Math.min(0.28, (dist / 200) * 0.28);
+      const tilt = Math.max(-9, Math.min(9, (dy / Math.max(dist, 1)) * 9));
+      cur.style.transition = 'transform .10s ease-out, scale .12s ease';
+      cur.style.transform =
+        `translate(${x}px, ${y}px) rotate(${tilt}deg) ` +
+        `rotate(${ang}deg) scale(${stretch}, ${1 / stretch}) rotate(${-ang}deg)`;
+      clearTimeout(settleTimer);
+      settleTimer = setTimeout(() => {
+        cur.style.transition = 'transform .34s cubic-bezier(.22,.9,.3,1), scale .12s ease';
+        place(x, y);
+      }, 110);
+    } else {
+      place(x, y);                       // 第一次定位 / 小幅移动：直接摆过去
+    }
+    lastX = x; lastY = y;
     lbl.style.left = x + 'px';
     lbl.style.top = y + 'px';
   };

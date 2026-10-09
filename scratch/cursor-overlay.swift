@@ -100,12 +100,66 @@ final class LensView: NSView {
     func stop() { timer?.invalidate(); timer = nil }
 }
 
+/// Codex 的 "scoot" 动画模型（参数名抄自 SkyComputerUseService 的符号表）：
+///   scootPositionResponse / scootPositionDampingFraction  位置弹簧
+///   scootDistanceThreshold                                移动多远才算"挪动"
+///   scootStretchXAmount / scootStretchScale / scootStretchMin   沿运动方向拉伸
+///   scootSquashYAmount / scootStretchPivotX               垂直压扁 + 支点
+///   scootRotationMax / scootRotationResponse              朝运动方向侧倾
+///   cursorBlurTransition                                  快速移动时糊一下
+final class ScootAnimator {
+    var pos = CGPoint.zero
+    var vel = CGPoint.zero
+    var target = CGPoint.zero
+    var live = false
+
+    let response = 0.34                     // 弹簧响应（秒）
+    let damping = 0.82                      // 阻尼比，<1 会有一点点回弹
+    let distanceThreshold: CGFloat = 5
+    let stretchMax: CGFloat = 1.30
+    let stretchMin: CGFloat = 0.78
+    let squashY: CGFloat = 0.86
+    let rotationMax: CGFloat = 0.15         // 弧度，约 8.6°
+
+    var stretch: CGFloat = 1
+    var tilt: CGFloat = 0
+    var blur: CGFloat = 0
+
+    func jump(to p: CGPoint) { pos = p; target = p; vel = .zero; live = true }
+    func move(to p: CGPoint) {
+        guard live else { jump(to: p); return }
+        if hypot(p.x - pos.x, p.y - pos.y) < distanceThreshold { return }
+        target = p
+    }
+
+    func step(_ dt: Double) {
+        guard live else { return }
+        let omega = 2 * Double.pi / response
+        let k = omega * omega
+        let c = 2 * damping * omega
+        let ax = -k * Double(pos.x - target.x) - c * Double(vel.x)
+        let ay = -k * Double(pos.y - target.y) - c * Double(vel.y)
+        vel.x += CGFloat(ax * dt); vel.y += CGFloat(ay * dt)
+        pos.x += vel.x * CGFloat(dt); pos.y += vel.y * CGFloat(dt)
+
+        let speed = hypot(vel.x, vel.y)
+        let amount = min(1.0, Double(speed) / 2600.0)
+        stretch = 1 + (stretchMax - 1) * CGFloat(amount)
+        tilt = CGFloat(sin(atan2(Double(vel.y), Double(vel.x)) + .pi / 2)) * rotationMax * CGFloat(amount)
+        blur = min(1.0, Double(speed) / 3200.0)
+
+        if speed < 3 && hypot(pos.x - target.x, pos.y - target.y) < 0.6 {
+            pos = target; vel = .zero
+            stretch = 1; tilt = 0; blur = 0
+        }
+    }
+}
+
 final class OverlayController: NSObject {
     let panel: NSPanel
     let view: CursorView
     var timer: Timer?
-    var current: NSPoint = .zero
-    var target: NSPoint = .zero
+    let anim = ScootAnimator()
     var visible = false
 
     override init() {
@@ -119,12 +173,15 @@ final class OverlayController: NSObject {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        panel.ignoresMouseEvents = true            // 点击穿透
+        panel.ignoresMouseEvents = true
         panel.hidesOnDeactivate = false
-        panel.level = .screenSaver                 // 永远置顶
+        panel.level = .screenSaver
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
         panel.isMovable = false
         panel.contentView = view
+        view.wantsLayer = true                 // 拉伸/模糊要靠 layer
+        view.layer?.masksToBounds = false
+        view.layer?.anchorPoint = CGPoint(x: 0, y: 0)
     }
 
     // Quartz 全局坐标（左上原点，y 向下）→ AppKit 屏幕坐标（左下原点）
@@ -133,55 +190,74 @@ final class OverlayController: NSObject {
         return NSPoint(x: CGFloat(x), y: screenH - CGFloat(y))
     }
 
-    func place(_ p: NSPoint) {
-        current = p
-        panel.setFrameOrigin(p)
-    }
-
     func show(x: Double, y: Double, animate: Bool) {
         let p = screenPoint(x, y)
         if !visible {
-            place(p)
-            panel.orderFrontRegardless()           // 显示但不激活本进程
+            anim.jump(to: p)
+            panel.setFrameOrigin(p)
+            panel.orderFrontRegardless()       // 显示但不激活本进程
             visible = true
+            startTicking()
             return
         }
-        target = p
-        guard animate else { place(p); return }
-        timer?.invalidate()
+        if animate { anim.move(to: p) } else { anim.jump(to: p) }
+    }
+
+    /// 60fps 弹簧：位置 + 沿运动方向拉伸 + 侧倾 + 快移模糊
+    func startTicking() {
+        guard timer == nil else { return }
+        var last = Date()
         timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] t in
             guard let self = self else { t.invalidate(); return }
-            let dx = self.target.x - self.current.x
-            let dy = self.target.y - self.current.y
-            let dist = sqrt(dx * dx + dy * dy)
-            if dist < 1.5 {
-                self.place(self.target)
-                t.invalidate()
-                return
-            }
-            let step = min(dist, max(4.0, dist * 0.28))
-            self.place(NSPoint(x: self.current.x + dx / dist * step,
-                               y: self.current.y + dy / dist * step))
+            let now = Date(); let dt = min(0.05, now.timeIntervalSince(last)); last = now
+            self.anim.step(dt)
+            self.applyTransform()
         }
+        RunLoop.main.add(timer!, forMode: .common)
+    }
+
+    func applyTransform() {
+        panel.setFrameOrigin(anim.pos)
+        guard let layer = view.layer else { return }
+        // 支点在箭头尖（左上），所以绕支点缩放，看起来像"从尖端弹出去"
+        let pivot = CGPoint(x: cursorSize * 0.05, y: cursorSize * 0.05)
+        var t = CGAffineTransform.identity
+        t = t.translatedBy(x: pivot.x, y: pivot.y)
+        t = t.rotated(by: anim.tilt)
+        t = t.scaledBy(x: anim.stretch, y: 1 / (anim.stretch * 1.0) * squashFactor())
+        t = t.translatedBy(x: -pivot.x, y: -pivot.y)
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        layer.setAffineTransform(t)
+        layer.filters = anim.blur > 0.18 ? [blurFilter(anim.blur * 1.5)] : []
+        CATransaction.commit()
+    }
+
+    func squashFactor() -> CGFloat { anim.stretch > 1.02 ? 1 / anim.squashY : 1 }
+
+    func blurFilter(_ radius: CGFloat) -> CIFilter? {
+        let f = CIFilter(name: "CIGaussianBlur")
+        f?.setValue(radius, forKey: "inputRadius")
+        return f
     }
 
     func press() {
         view.pressed = true
         view.needsDisplay = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+        anim.stretch = 0.80                    // 点击时压一下
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.11) {
             self.view.pressed = false
             self.view.needsDisplay = true
+            self.anim.stretch = 1.0
         }
     }
 
     func hide() {
-        timer?.invalidate()
+        timer?.invalidate(); timer = nil
         panel.orderOut(nil)
         visible = false
     }
 }
 
-// ── 压暗层：整屏变暗，光标周围留一块亮的（Codex 的聚焦感）──────
 final class FogView: NSView {
     var focus: NSPoint = .zero          // AppKit 坐标（左下原点）
     var radius: CGFloat = 200
@@ -315,7 +391,12 @@ func handle(_ line: String) {
     case "hide":
         controller.hide()
     case "ping":
-        FileHandle.standardError.write("pong visible=\(controller.visible)\n".data(using: .utf8)!)
+        let a = controller.anim
+        let line = String(format: "pong visible=%d pos=%.0f,%.0f target=%.0f,%.0f vel=%.0f stretch=%.3f tilt=%.3f blur=%.2f\n",
+                          controller.visible ? 1 : 0,
+                          a.pos.x, a.pos.y, a.target.x, a.target.y,
+                          hypot(a.vel.x, a.vel.y), a.stretch, a.tilt, a.blur)
+        FileHandle.standardError.write(line.data(using: .utf8)!)
     case "lens" where parts.count >= 3:
         if let x = Double(parts[1]), let y = Double(parts[2]) { effects.showLens(x: x, y: y) }
     case "lenshide":
