@@ -2,3 +2,8 @@ node_modules/
 *.log
 .DS_Store
 /tmp/
+
+# 别的 agent 工具留下的指针/计划文件，不该进仓库
+.v2c/
+.video_agent/
+.zcode/
