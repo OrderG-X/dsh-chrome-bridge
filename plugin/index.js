@@ -14,6 +14,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import { installImageGuard } from './image-guard.js'
 
 /**
  * 这里刻意不 import 任何外部包——不碰 `@deepseek-ai/dsh-tools`。
@@ -490,6 +491,11 @@ export function apply(ctx, config) {
     }
   }
   trace(`已注册 ${tools.length} 个工具: ${tools.map((t) => t.name).join(', ')}`)
+
+  // 上游报「图片太多」时卸掉最老的几张再重试（见 image-guard.js）
+  installImageGuard(ctx, trace)
 }
 
 trace('模块已加载')
+
+

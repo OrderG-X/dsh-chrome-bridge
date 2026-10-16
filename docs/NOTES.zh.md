@@ -359,3 +359,52 @@ DSH（DeepSeek Harness）本身就是 harness —— agent 循环、模型路由
 5. **技能和工具是两套入口，要同时维护、别互相矛盾。** 技能里写的是 `cb` 命令，
    装了插件后模型手里是 `browser_*` 工具。所以技能第一段就写"能用工具就用工具"，
    不然模型会在有工具的情况下绕去 shell，白白多一层转义和进程开销。
+
+---
+
+# 图片撞上限把会话打死（2026-10-11）
+
+## 症状
+
+长会话（截图多）某次请求直接红掉，且**再也发不出去**：
+
+```
+400: {"type":"invalid_request_error","message":"Upstream request failed:
+      [invalid_request_error] Too many images in request: 65 > 64"}
+```
+
+每次重发还是 65 张 → 会话作废，只能新开。
+
+## 真因
+
+DSH 本来有这套机制：适配器预检超预算 → 抛 `IMAGE_OFFLOAD_REQUIRED` →
+`dsh-compaction-image-offload` 记一条 `image/offload`，把最老的图换成占位 → 自动重试。
+但 **pi-ai 这条路由（opencode-go）只预检字节数（`maxRequestImageBytes`），不管张数**
+（`dsh-llm-deepseek` 那个 `maxImagesPerRequest` 默认 600，且不在 pi-ai 的配置面上），
+所以上游的 64 张硬限没有任何人拦，错误直接砸到会话上。
+
+## 修法：`plugin/image-guard.js`
+
+1. `agent/request-error` 里自己认这个错（正则抠出 `N > M`），卸 `N-M+8` 张最老的图，
+   记一条和内置同形状的 `image/offload`，返回 `{ kind: 'retry' }`；
+2. **自己注册 `image/offload` 投影** —— 实测 desktop profile 里内置的
+   `compaction-image-offload` 没挂，直接 append 会抛
+   `requires a message projection`。投影定义是从内置那份逐行对齐抄的（纯函数，语义一致），
+   已经有人注册就跳过（不重复注册）。
+
+没有图可卸 / 记不进 session 时照旧 `next()`，所以最坏情况和不装这个守卫一样。
+
+## 验证
+
+- `node scratch/test-image-guard.mjs` —— 6 个用例：抠数字、跳过 assistant 节点和已卸下的图、
+  投影标记 + 冻结、无图可卸放行、append 抛错放行、投影重名不炸。
+- 线上：改完 HMR 就把插件重挂了（trace 里 "模块已加载" → "已注册 image/offload 投影"），
+  下一次失败立刻打出 `图片超限：卸下最老的 9 张并重试本轮` —— 说明这条路真的走通了。
+
+## 注意
+
+- 这条守卫是**补 DSH 缺的那一环**，形状和内置插件一致，不是往插件里塞 agent 逻辑；
+  上游要是给 pi-ai 加上张数预检，这个文件可以直接删。
+- 会话文件里那些 `image/offload` 事件是**永久决策**：被卸下的图以后只发占位文本，
+  模型再也看不到那几张老截图（这正是设计意图）。
+
