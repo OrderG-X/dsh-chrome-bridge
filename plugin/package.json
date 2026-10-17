@@ -1,7 +1,7 @@
 {
   "name": "dsh-chrome-bridge",
-  "version": "1.0.0",
-  "description": "DSH plugin: native browser_* tools that drive the Chrome you are already using — over native messaging + CDP. No WebSocket, no port, no Connect button.",
+  "version": "1.1.0",
+  "description": "DSH plugin: native browser_* tools that drive the Chrome you are already using — over native messaging + CDP. No WebSocket, no port, no Connect button. One-time host install required (repo install.sh + Chrome extension, see README); tools fail loudly until then.",
   "type": "module",
   "license": "MIT",
   "author": "OrderG-X",
@@ -38,7 +38,7 @@
   "icon": "./icon.svg",
   "meta": {
     "title": "Chrome Bridge",
-    "description": "原生 browser_* 工具，直接操作用户正在用的 Chrome（native messaging + CDP）"
+    "description": "原生 browser_* 工具，直接操作用户正在用的 Chrome（native messaging + CDP）。需先按 README 装一次宿主与 Chrome 扩展，未装时工具会明确报错"
   },
   "dsh": {
     "bundle": {

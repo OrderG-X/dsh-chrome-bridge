@@ -60,7 +60,7 @@ export const inject = ['tools']
 
 const SOCK = process.env.DSH_BRIDGE_SOCK || '/tmp/dsh-bridge.sock'
 const TOKEN_FILE = process.env.DSH_BRIDGE_TOKEN || '/tmp/dsh-bridge.token'
-const HINT = '跑 `~/Projects/browser-agent-kit/bridge status` 看看宿主和扩展状态'
+const HINT = '浏览器桥需要先装宿主（一次性）：git clone https://github.com/OrderG-X/dsh-chrome-bridge 后在仓库里跑 ./install.sh，再到 chrome://extensions 打开开发者模式、「加载已解压的扩展程序」选 ~/dsh-bridge-extension。装过的话跑 dsh-chrome-bridge status 查状态（README 有完整步骤）'
 
 // ── 与宿主通话 ──────────────────────────────────────────────────────────────
 
