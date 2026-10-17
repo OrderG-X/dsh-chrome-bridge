@@ -90,6 +90,10 @@ Puts the tabs an agent is currently driving into one labelled tab group, and tak
 ```
 Required to list the user's tabs (title and URL) so the agent can pick the right one, and to open, close, focus or reload a tab when the user asks for it.
 ```
+- `scripting`:
+```
+Injects the on-page cursor overlay and a temporary favicon link into the tab the user's own agent is currently working on, so the tab strip shows a small mouse while that cursor is on the page. No other tab is touched, and nothing is sent anywhere.
+```
 - `nativeMessaging`:
 ```
 The only channel to the local helper process that performs the work. It is a stdio pipe to an executable the user installed on the same machine; the extension never talks to a remote server.

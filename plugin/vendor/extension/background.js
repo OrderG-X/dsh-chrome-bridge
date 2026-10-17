@@ -161,6 +161,7 @@ const CURSOR_ICON = { 16: 'icons/cursor16.png', 32: 'icons/cursor32.png', 48: 'i
 const CURSOR_FAVICON = 'data:image/png;base64,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'
 const IDLE_ICON = { 16: 'icons/icon16.png', 32: 'icons/icon32.png', 48: 'icons/icon48.png' }
 const groupedTabs = new Map() // tabId -> groupId（只记我们自己建的组）
+let ourGroupId = null          // 我们那个组（所有受控标签页共用一个）
 
 /** 受控标签页的 favicon 换成小鼠标（松手还原）。页面导航后 favicon 自然复原，下次控制再补。 */
 async function setTabFavicon(tabId, on) {
@@ -187,11 +188,36 @@ async function setTabFavicon(tabId, on) {
 async function markTab(tabId) {
   const id = Number(tabId)
   // 分组 = "这个标签页正在被操作"；标签上的小鼠标只跟页内光标走（markCursor）
+  await ensureGroup(id)
+}
+
+/**
+ * 所有受控标签页共用**同一个组**（不然同时操作 3 个标签页会出现 3 个同名蓝组）。
+ * 优先复用：内存里记的组 id → 按标题找现成的组 → 都没有才新建。
+ */
+async function ensureGroup(tabId) {
+  const id = Number(tabId)
   if (groupedTabs.has(id)) return
+  const candidates = []
+  if (ourGroupId != null) candidates.push(ourGroupId)
   try {
-    const groupId = await chrome.tabs.group({ tabIds: [id] })
-    groupedTabs.set(id, groupId)
-    await chrome.tabGroups.update(groupId, { title: GROUP_TITLE, color: 'blue' })
+    for (const g of await chrome.tabGroups.query({ title: GROUP_TITLE })) {
+      if (!candidates.includes(g.id)) candidates.push(g.id)
+    }
+  } catch {}
+  for (const gid of candidates) {
+    try {
+      await chrome.tabs.group({ tabIds: [id], groupId: gid })
+      groupedTabs.set(id, gid)
+      ourGroupId = gid
+      return
+    } catch {}
+  }
+  try {
+    const gid = await chrome.tabs.group({ tabIds: [id] })
+    groupedTabs.set(id, gid)
+    ourGroupId = gid
+    await chrome.tabGroups.update(gid, { title: GROUP_TITLE, color: 'blue' })
   } catch (e) {
     console.log('[dsh-bridge] 分组失败（不影响干活）:', String(e && e.message || e))
   }
@@ -225,6 +251,7 @@ async function reconcileGroups() {
       for (const t of tabs) {
         if (attachedIds.has(t.id)) {
           groupedTabs.set(t.id, g.id)
+          ourGroupId = g.id
         } else {
           groupedTabs.set(t.id, g.id)   // 先认领，unmarkTab 才会真的去拆
           await unmarkTab(t.id)
