@@ -119,7 +119,10 @@ DSH(bash) → cb CLI → Unix socket → 原生消息宿主 ←stdio(native mess
 
 ## 落地位置
 
-- 源码在本仓库：`extension/`（MV3 扩展）、`host/`（Node 原生宿主）、`bin/cb`（CLI）
+- 源码在本仓库：`plugin/vendor/extension/`（MV3 扩展）、`plugin/vendor/host/`（Node 原生宿主）、
+  `plugin/vendor/cb`（CLI）、`plugin/vendor/skill/`、`plugin/vendor/in-page-cursor.js`（页内光标）
+  —— 全都在插件包内，所以 `dsh plugin add <tarball>` 一个动作就把宿主带过去；插件里的
+  `plugin/setup.js` 在首次加载时自动落盘并写注册文件（不再需要 python3、不再需要 clone 仓库）
 - 安装产物：扩展 `~/dsh-bridge-extension`（**故意放可见目录**，Chrome 文件框点侧边栏
   点侧边栏的家目录就能选中，不用 ⌘⇧G 去开隐藏目录）；宿主 `~/.dsh/chrome-bridge/host/`；
   CLI `~/.dsh/bin/cb`

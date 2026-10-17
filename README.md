@@ -61,41 +61,36 @@ DSH's agent  (provided by the harness — this repo ships none)
 
 **This repo ships no agent** — the agent above is DSH's own; we only give it hands.
 
-The extension ID is fixed by the public key embedded in `extension/manifest.json`, so it is **identical on every machine** and the native-host registration never needs editing.
+The extension ID is fixed by the public key embedded in `plugin/vendor/extension/manifest.json`, so it is **identical on every machine** and the native-host registration never needs editing.
 
 ## 🚀 Install
 
-Requirements: **macOS**, **Google Chrome 116+**, **Node.js 18+**, and `python3` (installer only, to derive the extension ID).
+**The host ships inside the plugin package.** Adding the plugin copies the native host and the MV3 extension into place and registers native messaging for you — no `git clone`, no `install.sh`, no `python3`.
 
-```bash
-git clone https://github.com/OrderG-X/dsh-chrome-bridge.git
-cd dsh-chrome-bridge
-./install.sh
+Requirements: **macOS**, **Google Chrome 116+**, **Node.js 18+**.
+
+**1.** Sidebar → **Plugins** → **Add plugin** → paste this → Install → Enable → **restart DSH**:
+
+```
+https://github.com/OrderG-X/dsh-chrome-bridge/releases/latest/download/dsh-chrome-bridge.tgz
 ```
 
-Then the one manual step, once in your life:
+**2.** The plugin installs itself on first load (`~/.dsh/chrome-bridge`, `~/dsh-bridge-extension`, plus `com.dsh.bridge.json` in Chrome's `NativeMessagingHosts`). Loading the extension into Chrome is the one step it cannot do for you — Chrome 137+ removed `--load-extension`, and the Web Store does not accept the `debugger` permission. Do it once, ever:
 
 1. open `chrome://extensions`
 2. enable **Developer mode** (top right)
 3. **Load unpacked** → pick `~/dsh-bridge-extension`
 
-Verify:
+**3.** Verify (the `cb` CLI is installed along the way):
 
 ```bash
 cb status     # host pid … | extension connected: ✅
 cb tabs
 ```
 
-### 🧩 Optional: native DSH tools
+Until step 2 is done the `browser_*` tools fail **loudly with exactly these steps** — never silently.
 
-Without this you drive the bridge from a shell (`cb …`). With it, DSH gets **9 native tools**, and screenshots come back as **images the model actually sees**.
-
-Sidebar → **Plugins** → **Add plugin** → paste either of these → Install → Enable → **restart DSH**:
-
-```
-/absolute/path/to/dsh-chrome-bridge/plugin          # local checkout (recommended for development)
-github:OrderG-X/dsh-chrome-bridge#path:plugin       # straight from GitHub, no clone needed
-```
+### 🧩 The nine native tools
 
 | Tool | What it does |
 |---|---|
@@ -109,10 +104,20 @@ github:OrderG-X/dsh-chrome-bridge#path:plugin       # straight from GitHub, no c
 | `browser_wait` | wait for an element to appear |
 | `browser_dialog` | release alert / confirm / prompt |
 
-> A freshly installed bundle is not hot-loaded; the app must be restarted once.
-> `dsh plugin add` from the CLI refuses the app-managed profile — use the GUI.
+> A freshly installed bundle is not hot-loaded; DSH must be restarted once.
+> `dsh plugin add` from the CLI refuses the app-managed profile — use the sidebar there.
 > Plugin updates are not automatic in DSH yet: to upgrade, uninstall and install again.
-> A **local path** install is a `link:`, so a `git pull` is enough there.
+
+### 🛠 From source (development)
+
+```bash
+git clone https://github.com/OrderG-X/dsh-chrome-bridge.git
+cd dsh-chrome-bridge
+./install.sh        # same layout as the plugin's auto-install, plus the manager CLI
+./bridge status     # repo / installed / running version + connection
+```
+
+Then point DSH at the checkout for the native tools: **Plugins → Add plugin** → `/absolute/path/to/dsh-chrome-bridge/plugin` (a `link:`, so a `git pull` is enough to update).
 
 ## 📖 Usage
 

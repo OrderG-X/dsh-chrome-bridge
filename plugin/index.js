@@ -14,7 +14,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import { fileURLToPath } from 'node:url'
 import { installImageGuard } from './image-guard.js'
+import { ensureInstalled, installHint } from './setup.js'
 
 /**
  * 这里刻意不 import 任何外部包——不碰 `@deepseek-ai/dsh-tools`。
@@ -60,7 +62,8 @@ export const inject = ['tools']
 
 const SOCK = process.env.DSH_BRIDGE_SOCK || '/tmp/dsh-bridge.sock'
 const TOKEN_FILE = process.env.DSH_BRIDGE_TOKEN || '/tmp/dsh-bridge.token'
-const HINT = '浏览器桥需要先装宿主（一次性）：git clone https://github.com/OrderG-X/dsh-chrome-bridge 后在仓库里跑 ./install.sh，再到 chrome://extensions 打开开发者模式、「加载已解压的扩展程序」选 ~/dsh-bridge-extension。装过的话跑 dsh-chrome-bridge status 查状态（README 有完整步骤）'
+/** 报错时带上「还差哪一步」——宿主和 native 注册已由 setup.js 自动装好。 */
+const HINT = () => installHint()
 
 // ── 与宿主通话 ──────────────────────────────────────────────────────────────
 
@@ -70,7 +73,7 @@ function call(op, args = {}, timeoutMs = 60000) {
     let token = null
     try { token = fs.readFileSync(TOKEN_FILE, 'utf8').trim() } catch {}
     if (!fs.existsSync(SOCK)) {
-      return reject(new Error(`浏览器桥没在跑（找不到 ${SOCK}）：Chrome 没开，或扩展没装。${HINT}`))
+      return reject(new Error(`浏览器桥没在跑（找不到 ${SOCK}）：Chrome 没开，或扩展还没加载。\n${HINT()}`))
     }
     const id = crypto.randomUUID()
     const sock = net.connect(SOCK)
@@ -88,7 +91,7 @@ function call(op, args = {}, timeoutMs = 60000) {
       if (msg.ok) finish(resolve, msg.result)
       else finish(reject, new Error(msg.error || '未知错误'))
     })
-    sock.on('error', (e) => finish(reject, new Error(`连不上浏览器桥：${e.message}。${HINT}`)))
+    sock.on('error', (e) => finish(reject, new Error(`连不上浏览器桥：${e.message}\n${HINT()}`)))
     sock.on('close', () => finish(reject, new Error('浏览器桥连接被关掉了')))
     setTimeout(() => finish(reject, new Error(`等浏览器桥超时（${timeoutMs}ms）`)), timeoutMs)
   })
@@ -107,8 +110,14 @@ async function resolveTab(tab) {
 let cursorCache
 function cursorScript() {
   if (cursorCache !== undefined) return cursorCache
-  const file = path.join(os.homedir(), '.dsh/chrome-cursor/in-page-cursor.js')
-  try { cursorCache = fs.readFileSync(file, 'utf8') } catch { cursorCache = '' }
+  const candidates = [
+    path.join(os.homedir(), '.dsh/chrome-cursor/in-page-cursor.js'), // setup.js 落盘的位置
+    path.join(path.dirname(fileURLToPath(import.meta.url)), 'vendor/in-page-cursor.js'), // 还没落盘时的兜底
+  ]
+  cursorCache = ''
+  for (const file of candidates) {
+    try { cursorCache = fs.readFileSync(file, 'utf8'); break } catch {}
+  }
   return cursorCache
 }
 const withCursor = (extra = {}) => {
@@ -140,6 +149,14 @@ const shotRefs = new Map()
 
 export function apply(ctx, config) {
   trace('apply 被调用')
+
+  // 一次性安装：宿主 + native 注册自动落地，用户只剩 Chrome 里点一次「加载已解压的扩展程序」
+  try {
+    const s = ensureInstalled()
+    trace(s.ok ? `setup: ${s.changed ? '已落盘' : '已是最新'} ext=${s.extId}` : `setup 跳过: ${s.reason}`)
+  } catch (e) {
+    trace(`setup 异常（忽略）: ${e && e.message}`)
+  }
   const tools = [
     // ── 标签页 ──────────────────────────────────────────────────────────────
     defineTool({

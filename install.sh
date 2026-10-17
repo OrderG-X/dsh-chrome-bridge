@@ -9,12 +9,17 @@
 #   2. registers the native messaging host with Chrome, bound to the extension's fixed ID
 #   3. installs the `cb` CLI, the `dsh-chrome-bridge` manager, and the DSH skill
 #
-# The extension ID is derived from the public key embedded in extension/manifest.json,
+# 平时用不着跑它：DSH 插件的 setup.js 在首次加载时会自动做 1~3 步（宿主 + 注册文件），
+# 装法就是 `dsh plugin add <tarball>`。这个脚本是给「用源码开发 / 想装 cb 命令行」的人用的，
+# 做的事和插件里的 setup.js 一致，结果落在同样的位置。
+#
+# The extension ID is derived from the public key embedded in the extension manifest,
 # so it is the same on every machine — the registration file never needs editing.
 
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")" && pwd)"
+VENDOR="$REPO/plugin/vendor"
 BRIDGE="$HOME/.dsh/chrome-bridge"
 # The extension lives in a VISIBLE folder on purpose: Chrome's "Load unpacked" file
 # picker cannot reach hidden directories without ⌘⇧G.
@@ -40,10 +45,6 @@ if [ "$(uname)" != "Darwin" ]; then
   echo "This bridge is macOS-only for now (the native messaging path is macOS-specific)." >&2
   exit 1
 fi
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "python3 is required (used to derive the extension ID from the manifest key)." >&2
-  exit 1
-fi
 NODE_BIN=""
 for N in "${DSH_BRIDGE_NODE:-}" /usr/local/bin/node "$HOME/.local/bin/node" /opt/homebrew/bin/node; do
   if [ -n "$N" ] && [ -x "$N" ]; then NODE_BIN="$N"; break; fi
@@ -55,20 +56,18 @@ fi
 
 echo "==> 1/6 native host -> $BRIDGE"
 mkdir -p "$BRIDGE/host" "$EXT_DIR" "$HOME/.dsh/bin" "$HOME/.dsh/chrome-cursor"
-cp -R "$REPO/extension/." "$EXT_DIR/"
-cp "$REPO/host/host.js" "$REPO/host/run.sh" "$BRIDGE/host/"
-cp "$REPO/scratch/in-page-cursor.js" "$HOME/.dsh/chrome-cursor/in-page-cursor.js" 2>/dev/null || true
+cp -R "$VENDOR/extension/." "$EXT_DIR/"
+cp "$VENDOR/host/host.js" "$VENDOR/host/run.sh" "$BRIDGE/host/"
+cp "$VENDOR/in-page-cursor.js" "$HOME/.dsh/chrome-cursor/in-page-cursor.js"
 chmod +x "$BRIDGE/host/run.sh"
 
 echo "==> 2/6 extension ID (derived from the manifest key; fixed forever)"
-EXT_ID="$(python3 - "$EXT_DIR/manifest.json" <<'PY'
-import base64, hashlib, json, sys
-key = json.load(open(sys.argv[1]))["key"]
-der = base64.b64decode(key)
-h = hashlib.sha256(der).hexdigest()[:32]
-print("".join(chr(ord("a") + int(c, 16)) for c in h))
-PY
-)"
+EXT_ID="$("$NODE_BIN" -e '
+const fs=require("fs"),crypto=require("crypto");
+const key=JSON.parse(fs.readFileSync(process.argv[1],"utf8")).key;
+const hex=crypto.createHash("sha256").update(Buffer.from(key,"base64")).digest("hex").slice(0,32);
+console.log([...hex].map(c=>String.fromCharCode(97+parseInt(c,16))).join(""));
+' "$EXT_DIR/manifest.json")"
 echo "    $EXT_ID"
 
 echo "==> 3/6 register native messaging host"
@@ -85,7 +84,7 @@ JSON
 echo "    $NM_FILE"
 
 echo "==> 4/6 install the cb CLI"
-cp "$REPO/bin/cb" "$HOME/.dsh/bin/cb"
+cp "$VENDOR/cb" "$HOME/.dsh/bin/cb"
 chmod +x "$HOME/.dsh/bin/cb"
 
 echo "==> 5/6 install the manager command"
@@ -109,7 +108,7 @@ esac
 
 echo "==> 6/6 install the DSH skill"
 mkdir -p "$HOME/.dsh/skills/browser"
-cp "$REPO/skill/SKILL.md" "$HOME/.dsh/skills/browser/SKILL.md"
+cp "$VENDOR/skill/SKILL.md" "$HOME/.dsh/skills/browser/SKILL.md"
 echo "    ~/.dsh/skills/browser/SKILL.md"
 
 cat <<EOF
@@ -125,9 +124,9 @@ Done. One manual step left — you only ever do this once:
   4. no buttons to press afterwards. Verify with:  cb status
 
 Optional — native DSH tools (browser_* instead of shelling out to cb):
-  DSH sidebar -> Plugins -> Add plugin -> paste this folder:
+  DSH sidebar -> Plugins -> Add plugin -> paste this (it installs the host by itself):
 
-     $REPO/plugin
+     github:OrderG-X/dsh-chrome-bridge#path:plugin
 
   then restart DSH (a freshly installed bundle is not hot-loaded).
 

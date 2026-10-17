@@ -15,12 +15,14 @@
 set -uo pipefail
 
 REPO="$(cd "$(dirname "$0")" && pwd)"
+VENDOR="$REPO/plugin/vendor"
 EXT_DIR="$HOME/dsh-bridge-extension"
 BRIDGE="$HOME/.dsh/chrome-bridge"
 CB="$HOME/.dsh/bin/cb"
 
-repo_ver() { python3 -c "import json;print(json.load(open('$REPO/extension/manifest.json'))['version'])" 2>/dev/null || echo '?'; }
-inst_ver() { python3 -c "import json;print(json.load(open('$EXT_DIR/manifest.json'))['version'])" 2>/dev/null || echo '未安装'; }
+manifest_ver() { node -e 'console.log(require(process.argv[1]).version)' "$1" 2>/dev/null || echo "${2:-?}"; }
+repo_ver() { manifest_ver "$VENDOR/extension/manifest.json"; }
+inst_ver() { manifest_ver "$EXT_DIR/manifest.json" 未安装; }
 
 case "${1:-help}" in
   install)
@@ -30,11 +32,12 @@ case "${1:-help}" in
   update)
     echo "同步代码 → $EXT_DIR"
     mkdir -p "$EXT_DIR" "$BRIDGE/host" "$HOME/.dsh/bin"
-    cp -R "$REPO/extension/." "$EXT_DIR/"
-    cp "$REPO/host/host.js" "$REPO/host/run.sh" "$BRIDGE/host/"
-    cp "$REPO/bin/cb" "$CB"
+    cp -R "$VENDOR/extension/." "$EXT_DIR/"
+    cp "$VENDOR/host/host.js" "$VENDOR/host/run.sh" "$BRIDGE/host/"
+    cp "$VENDOR/in-page-cursor.js" "$HOME/.dsh/chrome-cursor/in-page-cursor.js"
+    cp "$VENDOR/cb" "$CB"
     mkdir -p "$HOME/.dsh/skills/browser"
-    cp "$REPO/skill/SKILL.md" "$HOME/.dsh/skills/browser/SKILL.md"
+    cp "$VENDOR/skill/SKILL.md" "$HOME/.dsh/skills/browser/SKILL.md"
     chmod +x "$CB" "$BRIDGE/host/run.sh"
     echo "热重载扩展（v$(repo_ver)）…"
     "$CB" reload 2>/dev/null || echo "  扩展没在跑，下次打开 Chrome 自动加载新代码"
@@ -97,7 +100,7 @@ print(ok[0]['id'] if ok else '')")
     # 发版用：打出 npm 风格的 tgz（package/ 前缀），附加到 GitHub Release
     OUT="/tmp/dsh-chrome-bridge.tgz"
     rm -f "$OUT"
-    ( cd "$REPO/plugin" && tar -czf "$OUT" -s ',^,package/,' package.json index.js image-guard.js cordis.patch.yml icon.svg )
+    ( cd "$REPO/plugin" && tar -czf "$OUT" -s ',^,package/,' package.json index.js setup.js image-guard.js cordis.patch.yml icon.svg vendor )
     echo "打包完成 ${OUT}（$(wc -c < "$OUT" | tr -d ' ') bytes）"
     echo "发版时记得附加（资产名必须不带版本号，目录条目用的是 latest/download）："
     echo "  gh release upload <tag> ${OUT} --clobber"

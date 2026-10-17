@@ -61,41 +61,36 @@ DSH 的 agent（harness 自带，本仓库不提供）
 
 **本仓库不含 agent** —— 上面那个 agent 是 DSH（harness）自带的，我们只给它一双手。
 
-扩展 ID 由 `extension/manifest.json` 里的公钥固定，所以**每台机器上装的 ID 都一样**，注册文件不用改。
+扩展 ID 由 `plugin/vendor/extension/manifest.json` 里的公钥固定，所以**每台机器上装的 ID 都一样**，注册文件不用改。
 
 ## 🚀 安装
 
-要求：**macOS**、**Chrome 116+**、**Node.js 18+**、`python3`（只用于算扩展 ID）。
+**宿主就在插件包里。** 装插件时它会把原生宿主和 MV3 扩展复制到固定位置、并替你写好 native messaging 注册 —— 不用 `git clone`、不用跑 `install.sh`、不用 `python3`。
 
-```bash
-git clone https://github.com/OrderG-X/dsh-chrome-bridge.git
-cd dsh-chrome-bridge
-./install.sh
+要求：**macOS**、**Chrome 116+**、**Node.js 18+**。
+
+**1.** 侧栏 → **插件** → **添加插件** → 粘贴这个 → 安装 → 启用 → **重启 DSH**：
+
+```
+https://github.com/OrderG-X/dsh-chrome-bridge/releases/latest/download/dsh-chrome-bridge.tgz
 ```
 
-然后一次性手动步骤（一辈子就一次）：
+**2.** 插件首次加载会自己装好（`~/.dsh/chrome-bridge`、`~/dsh-bridge-extension`，以及 Chrome `NativeMessagingHosts` 里的 `com.dsh.bridge.json`）。只有「把扩展装进 Chrome」这一步它替不了你 —— Chrome 137+ 移除了 `--load-extension`，应用商店也不收 `debugger` 权限。一辈子做一次：
 
 1. 打开 `chrome://extensions`
 2. 右上角打开**开发者模式**
 3. **加载未打包的扩展程序** → 选 `~/dsh-bridge-extension`
 
-验证：
+**3.** 验证（`cb` 命令行也顺带装好了）：
 
 ```bash
 cb status     # 宿主 pid … | 扩展连接: ✅
 cb tabs
 ```
 
-### 🧩 可选：DSH 原生工具
+第 2 步没做之前，`browser_*` 工具会**带着这几步明确报错**，不会静默失败。
 
-不装也能用，只是要从命令行敲 `cb`。装了之后 DSH 多出 **9 个原生工具**，而且截图会**当图片返回**，模型真的看得见。
-
-侧栏 → **插件** → **添加插件** → 粘贴下面任一个 → 安装 → 启用 → **重启 DSH**：
-
-```
-/本仓库绝对路径/plugin                          # 本地路径（开发时推荐）
-github:OrderG-X/dsh-chrome-bridge#path:plugin   # 直接装 GitHub，不用 clone
-```
+### 🧩 九个原生工具
 
 | 工具 | 干什么 |
 |---|---|
@@ -110,8 +105,19 @@ github:OrderG-X/dsh-chrome-bridge#path:plugin   # 直接装 GitHub，不用 clon
 | `browser_dialog` | 放行 alert / confirm / prompt |
 
 > 新装的 bundle 不会热加载，必须重启一次 app。
-> CLI 的 `dsh plugin add` 对 app 独占的 profile 会拒绝，走 GUI。
-> DSH 目前**不支持插件自动更新**：升级要卸载后重装。用**本地路径**装的是 `link:`，`git pull` 一下就够。
+> CLI 的 `dsh plugin add` 对 app 独占的 profile 会拒绝，那种情况走侧栏。
+> DSH 目前**不支持插件自动更新**：升级要卸载后重装。
+
+### 🛠 从源码装（开发用）
+
+```bash
+git clone https://github.com/OrderG-X/dsh-chrome-bridge.git
+cd dsh-chrome-bridge
+./install.sh        # 和插件自动安装的落盘位置一致，另外多一个管理命令
+./bridge status     # 仓库版本 / 已装版本 / 运行版本 + 连接状态
+```
+
+想要原生工具就把本地路径填进 DSH：**插件 → 添加插件** → `/本仓库绝对路径/plugin`（装的是 `link:`，`git pull` 一下就更新）。
 
 ## 📖 用法
 

@@ -1,7 +1,7 @@
 {
   "name": "dsh-chrome-bridge",
-  "version": "1.1.0",
-  "description": "DSH plugin: native browser_* tools that drive the Chrome you are already using — over native messaging + CDP. No WebSocket, no port, no Connect button. One-time host install required (repo install.sh + Chrome extension, see README); tools fail loudly until then.",
+  "version": "1.2.0",
+  "description": "DSH plugin: native browser_* tools that drive the Chrome you are already using — over native messaging + CDP. No WebSocket, no port, no Connect button. The native host and the MV3 extension ship inside this package and are installed automatically on first load; the only manual step left is picking ~/dsh-bridge-extension once at chrome://extensions (Chrome ≥137 has no programmatic extension install). Until then browser_* tools fail loudly with those exact steps.",
   "type": "module",
   "license": "MIT",
   "author": "OrderG-X",
@@ -30,15 +30,17 @@
   },
   "files": [
     "index.js",
+    "setup.js",
     "image-guard.js",
     "cordis.patch.yml",
     "icon.svg",
+    "vendor",
     "package.json"
   ],
   "icon": "./icon.svg",
   "meta": {
     "title": "Chrome Bridge",
-    "description": "原生 browser_* 工具，直接操作用户正在用的 Chrome（native messaging + CDP）。需先按 README 装一次宿主与 Chrome 扩展，未装时工具会明确报错"
+    "description": "原生 browser_* 工具，直接操作用户正在用的 Chrome（native messaging + CDP）。宿主与扩展随包自带、首次加载自动安装，只需去 chrome://extensions 选一次 ~/dsh-bridge-extension；未加载时工具会带着这几步明确报错"
   },
   "dsh": {
     "bundle": {
