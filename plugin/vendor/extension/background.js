@@ -144,6 +144,9 @@ async function detachIdle() {
   const now = Date.now()
   for (const tabId of [...attached]) {
     if (now - (lastUsed.get(tabId) || 0) < DETACH_IDLE_MS) continue
+    if (inflight.has(tabId)) continue          // 有 CDP 调用在飞（长 evaluate、截图…）
+    if (loadWaiters.has(tabId)) continue       // 正在等页面加载完成
+
     try { await chrome.debugger.detach({ tabId }) } catch {}
     attached.delete(tabId)
     lastUsed.delete(tabId)
@@ -280,8 +283,17 @@ async function ensure(tabId) {
   return Number(tabId)
 }
 
+// 正在执行的 CDP 调用计数：空闲断开不能把"正干着活"的标签页掐了
+const inflight = new Map()
+
 function send(tabId, method, params) {
-  return chrome.debugger.sendCommand({ tabId: Number(tabId) }, method, params || {})
+  const id = Number(tabId)
+  inflight.set(id, (inflight.get(id) || 0) + 1)
+  return chrome.debugger.sendCommand({ tabId: id }, method, params || {})
+    .finally(() => {
+      const n = (inflight.get(id) || 1) - 1
+      if (n <= 0) inflight.delete(id); else inflight.set(id, n)
+    })
 }
 
 chrome.debugger.onDetach.addListener((src) => {
