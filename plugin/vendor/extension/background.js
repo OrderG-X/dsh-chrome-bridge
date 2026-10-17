@@ -164,9 +164,9 @@ async function markTab(tabId) {
   const id = Number(tabId)
   try {
     // 工具栏图标换成"小鼠标"+ 角标点灯：只有被控制的这个标签页会变
+    // 图标本身换成"小鼠标"就够了；角标不再点灯（蓝底蓝点看不见）
     await chrome.action.setIcon({ tabId: id, path: CURSOR_ICON })
-    await chrome.action.setBadgeBackgroundColor({ tabId: id, color: '#4D6BFE' })
-    await chrome.action.setBadgeText({ tabId: id, text: '●' })
+    await chrome.action.setBadgeText({ tabId: id, text: '' })
     await chrome.action.setTitle({ tabId: id, title: 'DSH agent 正在操作这个标签页' })
   } catch {}
   if (groupedTabs.has(id)) return
