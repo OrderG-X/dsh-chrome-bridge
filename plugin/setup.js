@@ -11,8 +11,9 @@
  *   2. Chrome 的「加载已解压的扩展程序」只能选一个稳定、可见的目录。
  *   所以固定两个位置（和 install.sh 完全一致）：~/.dsh/chrome-bridge、~/dsh-bridge-extension。
  *
- * 剩下唯一不能自动的一步，是 Chrome 里点一次「加载已解压的扩展程序」：
- * Chrome 137+ 移除了 --load-extension，非商店扩展没法被脚本装进去，谁都绕不过。
+ * 剩下唯一不能自动的一步，是把扩展装进 Chrome：要么点一次「加载已解压的扩展程序」
+ * （Chrome 137+ 移除了 --load-extension，非商店扩展没法被脚本装进去），要么从 Chrome 应用商店装
+ * （商店版 ID 见 STORE_EXT_IDS，注册文件同时放行两个）。装好的判据只有一个：宿主连得上。
  *
  * 纯 Node，不 import 任何外部包（profile 上下文里解析不到，踩过）。
  */
@@ -44,12 +45,14 @@ export function vendorDir() {
 export function paths(home = os.homedir()) {
   const bridge = path.join(home, '.dsh/chrome-bridge')
   const extDir = path.join(home, EXT_DIR_NAME)
-  const nmDir = path.join(home, 'Library/Application Support/Google/Chrome/NativeMessagingHosts')
+  const chromeDir = path.join(home, 'Library/Application Support/Google/Chrome')
+  const nmDir = path.join(chromeDir, 'NativeMessagingHosts')
   return {
     home,
     bridge,
     hostDir: path.join(bridge, 'host'),
     extDir,
+    chromeDir,
     nmDir,
     nmFile: path.join(nmDir, `${HOST_NAME}.json`),
     cb: path.join(home, '.dsh/bin/cb'),
@@ -93,6 +96,26 @@ function vendorStamp(dir) {
   return hash.digest('hex')
 }
 
+/**
+ * Chrome 里有没有装商店版扩展：商店扩展落在 <profile>/Extensions/<id>/<版本>_0/，
+ * 「加载已解压」的不在这里（只记在 Preferences 里）。只用来挑报错文案 —— 装没装好，
+ * 最终还是看宿主连不连得上。返回 { id, profile, version } 或 null；读不到就当没装。
+ */
+export function storeExtension(home = os.homedir()) {
+  const { chromeDir } = paths(home)
+  let profiles = []
+  try { profiles = fs.readdirSync(chromeDir).filter((n) => n === 'Default' || /^Profile \d+$/.test(n)) } catch {}
+  for (const profile of profiles) {
+    for (const id of STORE_EXT_IDS) {
+      try {
+        const vers = fs.readdirSync(path.join(chromeDir, profile, 'Extensions', id)).filter((v) => !v.startsWith('.'))
+        if (vers.length) return { id, profile, version: vers.sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).pop().replace(/_\d+$/, '') }
+      } catch {}
+    }
+  }
+  return null
+}
+
 /** 装好了没有（只看落盘结果，不管 Chrome 有没有加载扩展）。 */
 export function installState(home = os.homedir()) {
   const p = paths(home)
@@ -105,6 +128,7 @@ export function installState(home = os.homedir()) {
     hostCopied: fs.existsSync(path.join(p.hostDir, 'run.sh')),
     registered: fs.existsSync(p.nmFile),
     vendor: fs.existsSync(vendorDir()),
+    store: storeExtension(home),
   }
 }
 
@@ -180,9 +204,10 @@ export function ensureInstalled(options = {}) {
 }
 
 /**
- * 出错时给模型/用户看的话。宿主和注册已经自动装好了，所以只剩 Chrome 那一下 ——
- * 那一下谁都替不了（Chrome 137+ 移除了 --load-extension，商店也不收 debugger 权限），
+ * 出错时给模型/用户看的话（只在宿主连不上时才会走到这里）。宿主和注册已经自动装好了，
+ * 所以只剩 Chrome 那一下 —— 那一下谁都替不了（Chrome 137+ 移除了 --load-extension），
  * 那就把它铺到用户手边：路径给全、⌘⇧G 粘贴的走法写清楚。
+ * 已经从商店装了扩展的，就别再让人去「加载已解压」，改成查启用 / 重启 Chrome。
  */
 export function installHint(home = os.homedir()) {
   const s = installState(home)
@@ -198,12 +223,23 @@ export function installHint(home = os.homedir()) {
       '可以手动跑一次：./bridge setup（源码仓库里），或者用源码的 install.sh。',
     ].join('\n')
   }
+  if (s.store) {
+    return [
+      `扩展已经从 Chrome 应用商店装好了（DSH Bridge ${s.store.version}），但宿主没连上：`,
+      '1. 确认 Chrome 开着',
+      '2. chrome://extensions 里 DSH Bridge 是启用状态',
+      '3. 还不行就完全退出 Chrome 再打开一次',
+      '不用再「加载已解压」；宿主和 native 注册已经自动装好了。',
+    ].join('\n')
+  }
   return [
     '浏览器桥还差最后一步（一次性）：',
     '1. Chrome 打开 chrome://extensions',
     '2. 右上角打开「开发者模式」',
     '3. 点「加载已解压的扩展程序」，在文件框里按 ⌘⇧G、粘贴、回车，选这个文件夹：',
     `   ${s.extDir}`,
+    // TODO(商店审核通过后)：换成商店链接 https://chromewebstore.google.com/detail/bippcbbbipppmhjkjomgdnjbooecbimo
+    '或者从 Chrome 应用商店安装「DSH Bridge」（上架审核中），装上就能用，不用开发者模式。',
     '装好后回到这里重试；宿主和 native 注册已经自动装好了，不用再跑任何脚本。',
   ].join('\n')
 }
@@ -216,16 +252,20 @@ function chromeRunning() {
 /**
  * 引导式安装：那一下点选替不了，但可以把用户送到那一下面前 ——
  *   · 扩展目录塞进剪贴板：文件框里 ⌘⇧G ⌘V 回车就到，不用手点目录树
+ *     （已经从商店装了就不塞：用不上解压目录，别白占用户剪贴板）
  *   · Chrome 在跑的话，顺手把 chrome://extensions 用后台标签页打开（不抢前台）
  * 只在「宿主连不上」时调用，且每个进程只做一次（见 index.js 的 firstAid）。
  */
 export function assistInstall(home = os.homedir()) {
   const p = paths(home)
-  const out = { clipboard: false, opened: false, chromeRunning: chromeRunning() }
-  try {
-    execFileSync('/usr/bin/pbcopy', [], { input: `${p.extDir}\n` })
-    out.clipboard = true
-  } catch {}
+  const store = storeExtension(home)
+  const out = { clipboard: false, opened: false, chromeRunning: chromeRunning(), store: !!store }
+  if (!store) {
+    try {
+      execFileSync('/usr/bin/pbcopy', [], { input: `${p.extDir}\n` })
+      out.clipboard = true
+    } catch {}
+  }
   if (out.chromeRunning) {
     try {
       execFileSync('/usr/bin/open', ['-g', '-a', 'Google Chrome', 'chrome://extensions'])

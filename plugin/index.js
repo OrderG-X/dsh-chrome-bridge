@@ -17,7 +17,7 @@ import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { installImageGuard } from './image-guard.js'
-import { ensureInstalled, installHint, assistInstall, paths } from './setup.js'
+import { ensureInstalled, installHint, assistInstall, paths, extensionId } from './setup.js'
 import { snapshot, locate, focusShadow, elementBox } from './refs.js'
 import { consoleLog, networkLog, responseBody, clearLogs } from './devtools.js'
 import { historyNav, waitUntil } from './nav.js'
@@ -146,8 +146,8 @@ const TOKEN_FILE = process.env.DSH_BRIDGE_TOKEN || '/tmp/dsh-bridge.token'
 /**
  * 第一次发现宿主连不上时，做一次「引导」：把扩展目录塞进剪贴板、后台打开
  * chrome://extensions（见 setup.js 的 assistInstall）。每个进程只做一次。
- * 那一下点选替不了 —— Chrome 137+ 没有 --load-extension，商店也不收 debugger 权限 ——
- * 但至少让用户不用自己去翻目录、找页面。
+ * 那一下点选替不了 —— Chrome 137+ 没有 --load-extension —— 但至少让用户不用自己去翻目录、找页面。
+ * 宿主连得上就算装好（不管扩展是解压的还是商店的），这里根本不会被调到。
  */
 let aided = false
 function firstAid() {
@@ -157,7 +157,7 @@ function firstAid() {
     if (fs.existsSync(SOCK)) return ''
     const r = assistInstall()
     const notes = []
-    if (r.opened) notes.push('我已经帮你把 chrome://extensions 打开（后台标签页）')
+    if (r.opened) notes.push(`我已经帮你把 chrome://extensions 打开（后台标签页）${r.store ? '，看一眼 DSH Bridge 是不是启用着' : ''}`)
     if (r.clipboard) notes.push('扩展文件夹的路径已经复制到剪贴板（文件框里 ⌘⇧G 再 ⌘V 回车就到）')
     return notes.length ? `\n（${notes.join('；')}）` : ''
   } catch {
@@ -234,17 +234,26 @@ async function emulateFocus(tabId) {
 /**
  * 扩展是「已解压」加载的：setup 把新文件拷进扩展目录后，Chrome 不会自己重载，跑的还是旧代码。
  * 所以插件启动时对一下版本号，对不上就让扩展自己 chrome.runtime.reload()（一秒内带着新代码回来）。
+ *
+ * 只管解压版（ID 和 ~/dsh-bridge-extension 推导出来的一致）。商店版的代码由商店自己更新，
+ * reload 只会白白掐断宿主一下；而商店版本号常常落后本地，不跳过就会每次启动都重载。
  */
 async function refreshExtension() {
   if (!fs.existsSync(SOCK)) return
-  let want
+  let want, localId
   try {
-    want = JSON.parse(fs.readFileSync(path.join(paths().extDir, 'manifest.json'), 'utf8')).version
+    const manifestFile = path.join(paths().extDir, 'manifest.json')
+    want = JSON.parse(fs.readFileSync(manifestFile, 'utf8')).version
+    localId = extensionId(manifestFile)
   } catch {
     return
   }
   try {
-    const { version } = await call('version', {}, 5000)
+    const { version, id } = await call('version', {}, 5000)
+    if (id && id !== localId) {
+      trace(`扩展 ${version}（${id}）不是本地解压版，不重载`)
+      return
+    }
     if (version === want) return
     await call('reload', {}, 5000)
     trace(`扩展 ${version} → ${want}：已让它重载`)
@@ -298,7 +307,7 @@ const shotRefs = new Map()
 export function apply(ctx, config) {
   trace('apply 被调用')
 
-  // 一次性安装：宿主 + native 注册自动落地，用户只剩 Chrome 里点一次「加载已解压的扩展程序」
+  // 一次性安装：宿主 + native 注册自动落地，用户只剩把扩展装进 Chrome（加载已解压，或商店装）
   try {
     const s = ensureInstalled()
     trace(s.ok ? `setup: ${s.changed ? '已落盘' : '已是最新'} ext=${s.extId}` : `setup 跳过: ${s.reason}`)
