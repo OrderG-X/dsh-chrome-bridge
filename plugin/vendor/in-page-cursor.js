@@ -28,8 +28,11 @@
     host.id = ID;
     host.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;pointer-events:none;z-index:2147483647';
     const sr = host.attachShadow({ mode: 'open' });
-    sr.innerHTML = `
-      <style>
+        // 注意：这里不能用 innerHTML —— Gmail 之类开了 Trusted Types 的站点会直接抛
+    // 「This document requires 'TrustedHTML' assignment」，光标就注入不进去（点也点不了）。
+    // 所以全部用 DOM API 搭，样式走 <style>.textContent（不是 Trusted Types 的 sink）。
+    const style = document.createElement('style');
+    style.textContent = `
         .c{position:fixed;left:0;top:0;width:30px;height:30px;pointer-events:none;
            background:linear-gradient(150deg,#16337a,#2E6EFF 30%,#7FA8FF 55%,#EAF1FF 72%,#5B8CFF 88%,#2E6EFF);
            background-size:100% 320%;
@@ -53,10 +56,12 @@
         .lbl.on{opacity:1}
         @keyframes dshflow{from{background-position:50% 0%}to{background-position:50% 100%}}
         @keyframes rip{from{opacity:.95;transform:scale(.25)}to{opacity:0;transform:scale(1.9)}}
-      </style>
-      <div class="c"></div>
-      <div class="r"></div>
-      <div class="lbl"></div>`;
+
+    `;
+    const curEl = document.createElement('div'); curEl.className = 'c';
+    const ripEl = document.createElement('div'); ripEl.className = 'r';
+    const lblEl = document.createElement('div'); lblEl.className = 'lbl';
+    sr.append(style, curEl, ripEl, lblEl);;
     document.documentElement.appendChild(host);
     host.__sr = sr;
   }

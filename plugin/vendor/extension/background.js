@@ -243,12 +243,22 @@ const __dsh_visible = (el) => {
 };
 const __dsh_point = (el) => {
   el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
-  return new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(() => {
-    const r = el.getBoundingClientRect();
-    res({ x: r.left + r.width / 2, y: r.top + r.height / 2,
-          tag: el.tagName.toLowerCase(),
-          text: __dsh_norm(el.innerText || el.value || el.getAttribute('aria-label') || '').slice(0, 80) });
-  })));
+  return new Promise((res) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      const r = el.getBoundingClientRect();
+      res({ x: r.left + r.width / 2, y: r.top + r.height / 2,
+            tag: el.tagName.toLowerCase(),
+            text: __dsh_norm(el.innerText || el.value || el.getAttribute('aria-label') || '').slice(0, 80) });
+    };
+    // 后台标签页里 Chrome 会暂停 requestAnimationFrame —— 只等 rAF 的话这个 Promise
+    // 永远不 resolve，整个 click-el / click-text 就卡死（45 秒超时、还不回话）。
+    // 所以 rAF 之外再挂一个定时器兜底。
+    requestAnimationFrame(() => requestAnimationFrame(finish));
+    setTimeout(finish, 120);
+  });
 };
 `
 
