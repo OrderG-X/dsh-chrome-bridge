@@ -147,6 +147,78 @@ async function detachIdle() {
     try { await chrome.debugger.detach({ tabId }) } catch {}
     attached.delete(tabId)
     lastUsed.delete(tabId)
+    await unmarkTab(tabId)
+  }
+}
+
+// ── 正在被控制的标签页：自动分组 + 扩展图标上的 🖱 角标 ──────────────────────
+// 用户在标签栏上一眼就能看出"agent 正在动哪几个页面"，松手（空闲断开 / 显式 detach /
+// 关掉标签页 / 点掉 Chrome 那条调试提示）就自动还原，不留痕。
+
+const GROUP_TITLE = 'DSH agent 正在操作'
+const CURSOR_ICON = { 16: 'icons/cursor16.png', 32: 'icons/cursor32.png', 48: 'icons/cursor48.png' }
+const IDLE_ICON = { 16: 'icons/icon16.png', 32: 'icons/icon32.png', 48: 'icons/icon48.png' }
+const groupedTabs = new Map() // tabId -> groupId（只记我们自己建的组）
+
+async function markTab(tabId) {
+  const id = Number(tabId)
+  try {
+    // 工具栏图标换成"小鼠标"+ 角标点灯：只有被控制的这个标签页会变
+    await chrome.action.setIcon({ tabId: id, path: CURSOR_ICON })
+    await chrome.action.setBadgeBackgroundColor({ tabId: id, color: '#4D6BFE' })
+    await chrome.action.setBadgeText({ tabId: id, text: '●' })
+    await chrome.action.setTitle({ tabId: id, title: 'DSH agent 正在操作这个标签页' })
+  } catch {}
+  if (groupedTabs.has(id)) return
+  try {
+    const groupId = await chrome.tabs.group({ tabIds: [id] })
+    groupedTabs.set(id, groupId)
+    await chrome.tabGroups.update(groupId, { title: GROUP_TITLE, color: 'blue' })
+  } catch (e) {
+    console.log('[dsh-bridge] 分组失败（不影响干活）:', String(e && e.message || e))
+  }
+}
+
+async function unmarkTab(tabId) {
+  const id = Number(tabId)
+  try {
+    await chrome.action.setIcon({ tabId: id, path: IDLE_ICON })
+    await chrome.action.setBadgeText({ tabId: id, text: '' })
+    await chrome.action.setTitle({ tabId: id, title: '' })
+  } catch {}
+  if (!groupedTabs.has(id)) return
+  groupedTabs.delete(id)
+  try { await chrome.tabs.ungroup([id]) } catch {}
+}
+
+/**
+ * 自愈：service worker 会被 Chrome 随时挂起、扩展重载也会清掉内存里的分组表，
+ * 但 Chrome 那边的组是持久的。所以启动时对一遍账：
+ *   · 还挂着调试会话的标签页 → 认领回分组表（继续归我们管）
+ *   · 已经没会话、却还留在「🖱 DSH agent」组里的 → 拆掉还原（别留孤儿组和残留角标）
+ */
+async function reconcileGroups() {
+  try {
+    const groups = await chrome.tabGroups.query({ title: GROUP_TITLE })
+    if (!groups.length) return
+    let attachedIds = new Set()
+    try {
+      const targets = await chrome.debugger.getTargets()
+      attachedIds = new Set(targets.filter(t => t.attached && t.tabId != null).map(t => t.tabId))
+    } catch {}
+    for (const g of groups) {
+      const tabs = await chrome.tabs.query({ groupId: g.id })
+      for (const t of tabs) {
+        if (attachedIds.has(t.id)) {
+          groupedTabs.set(t.id, g.id)
+        } else {
+          groupedTabs.set(t.id, g.id)   // 先认领，unmarkTab 才会真的去拆
+          await unmarkTab(t.id)
+        }
+      }
+    }
+  } catch (e) {
+    console.log('[dsh-bridge] 分组对账失败（不影响干活）:', String(e && e.message || e))
   }
 }
 
@@ -162,6 +234,7 @@ async function ensure(tabId) {
     for (const d of ['Page', 'DOM', 'Runtime', 'Network']) {
       try { await chrome.debugger.sendCommand({ tabId: Number(tabId) }, d + '.enable', {}) } catch {}
     }
+    await markTab(tabId)
   }
   return Number(tabId)
 }
@@ -171,7 +244,11 @@ function send(tabId, method, params) {
 }
 
 chrome.debugger.onDetach.addListener((src) => {
-  if (src && src.tabId != null) attached.delete(src.tabId)
+  if (src && src.tabId != null) {
+    attached.delete(src.tabId)
+    lastUsed.delete(src.tabId)
+    unmarkTab(src.tabId)   // 用户点掉 Chrome 那条调试提示也算松手
+  }
 })
 
 chrome.debugger.onEvent.addListener((src, method, params) => {
@@ -394,6 +471,8 @@ const OPS = {
       .map(t => ({
         id: t.id, windowId: t.windowId, active: t.active, pinned: t.pinned,
         title: t.title, url: t.url, attached: attached.has(t.id),
+        // 这个标签页是不是被我们自动分进「🖱 DSH agent」组（面板和自检都用得上）
+        grouped: groupedTabs.has(t.id), groupId: t.groupId >= 0 ? t.groupId : null,
       }))
   },
 
@@ -405,6 +484,8 @@ const OPS = {
   async detach({ tabId }) {
     try { await chrome.debugger.detach({ tabId: Number(tabId) }) } catch {}
     attached.delete(Number(tabId))
+    lastUsed.delete(Number(tabId))
+    await unmarkTab(tabId)
     return { tabId: Number(tabId), attached: false }
   },
 
@@ -754,5 +835,11 @@ chrome.alarms.onAlarm.addListener((a) => {
 
 chrome.runtime.onStartup.addListener(connect)
 chrome.runtime.onInstalled.addListener(connect)
-chrome.tabs.onRemoved.addListener((tabId) => { attached.delete(tabId); lastUsed.delete(tabId) })
+// 每次 worker 起来都对一次账：认领还活着的分组、拆掉孤儿组和残留角标
+reconcileGroups()
+chrome.tabs.onRemoved.addListener((tabId) => {
+  attached.delete(tabId)
+  lastUsed.delete(tabId)
+  groupedTabs.delete(tabId)   // 标签页都没了，组也轮不到我们拆
+})
 connect()

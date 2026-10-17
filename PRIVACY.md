@@ -34,6 +34,7 @@ The extension itself makes no outbound requests: no telemetry, no update pings, 
 |---|---|
 | `debugger` | Dispatches real CDP input events (clicks, typing, navigation, screenshots) and reads DOM/console/network on the tabs the agent works with. |
 | `tabs` | Lists your tabs so the agent can pick the right one; switches/closes tabs on request. |
+| `tabGroups` | Puts the tabs an agent is currently driving into one labelled tab group (and takes the group apart when it lets go), so you can see at a glance which pages are under control. |
 | `nativeMessaging` | The only channel to the local helper process. |
 | `alarms`, `storage` | Keeps the service worker alive while attached and stores local settings. |
 | `<all_urls>` (host permission + content script) | The agent works on whatever page you point it at, and the page-side cursor overlay must be able to draw on any page. |

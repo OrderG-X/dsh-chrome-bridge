@@ -82,6 +82,10 @@ Bridge the user's own Chrome to a locally running DSH agent, so that agent can r
 ```
 Required to dispatch real Chrome DevTools Protocol input events (mouse, keyboard, scrolling, drag, file chooser) and to read the DOM, console and network activity of the tab the user asked the agent to work on. Chrome shows a permanent debugging banner while attached and the user can cancel it at any time.
 ```
+- `tabGroups`:
+```
+Puts the tabs an agent is currently driving into one labelled tab group, and takes the group apart as soon as it lets go, so the user can see at a glance which pages are under control. No tab data leaves the machine.
+```
 - `tabs`:
 ```
 Required to list the user's tabs (title and URL) so the agent can pick the right one, and to open, close, focus or reload a tab when the user asks for it.

@@ -115,6 +115,12 @@ Until step 2 is done the `browser_*` tools fail **loudly with exactly these step
 > `dsh plugin add` from the CLI refuses the app-managed profile — use the sidebar there.
 > Plugin updates are not automatic in DSH yet: to upgrade, uninstall and install again.
 
+### 👀 What you see while it works
+
+- Every tab the agent touches **joins a blue tab group titled "DSH agent 正在操作"**, and the group is taken apart the moment it lets go — after 60s idle, on `cb detach`, if the tab is closed, or if you press *Cancel* on Chrome's debugging banner.
+- On that tab only, the toolbar icon turns into a **small cursor with a blue dot badge**, so you can tell at a glance which page is being driven.
+- Inside the page, the on-page cursor draws every click — and it appears in screenshots, so you and the model see the same picture.
+
 ### 🛠 From source (development)
 
 ```bash
