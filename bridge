@@ -153,7 +153,10 @@ print(ok[0]['id'] if ok else '')")
     # 发版用：打出 npm 风格的 tgz（package/ 前缀），附加到 GitHub Release
     OUT="/tmp/dsh-chrome-bridge.tgz"
     rm -f "$OUT"
-    ( cd "$REPO/plugin" && tar -czf "$OUT" -s ',^,package/,' package.json index.js setup.js image-guard.js cordis.patch.yml icon.svg vendor )
+    # 文件清单直接读 package.json 的 files —— 手写清单漏过新模块（refs/devtools/nav/drag），发出去的包 import 不到
+    FILES="$(cd "$REPO/plugin" && node -e 'console.log(require("./package.json").files.filter((f) => f !== "package.json").join(" "))')"
+    # shellcheck disable=SC2086
+    ( cd "$REPO/plugin" && tar -czf "$OUT" -s ',^,package/,' package.json $FILES )
     echo "打包完成 ${OUT}（$(wc -c < "$OUT" | tr -d ' ') bytes）"
     echo "发版时记得附加（资产名必须不带版本号，目录条目用的是 latest/download）："
     echo "  gh release upload <tag> ${OUT} --clobber"
