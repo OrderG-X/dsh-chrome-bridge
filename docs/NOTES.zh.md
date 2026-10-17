@@ -619,3 +619,28 @@ DSH 本来有这套机制：适配器预检超预算 → 抛 `IMAGE_OFFLOAD_REQU
 - 测试：`test-setup` 加了商店场景（认出商店版、文案不再让人加载已解压）和重载判断（假 socket，四种组合）。
 
 已知：同一个 Chrome 里解压版和商店版都开着时，两个都会拉起宿主、抢同一个 socket。让用户只留一个。
+
+# 2026-10-18 —— DSH 里的插件卡片和设置页（v1.11.0）
+
+以前插件页里只有一行英文包名。现在：
+
+- **卡片**：中文标题「Chrome 浏览器控制」+ 一句中文说明（英文环境显示 Chrome Bridge）。
+  DSH 读的是 `locale/<语言>.json` 里的 `meta.title/description`（要在 exports 里放出 `./locale/*.json`），package.json 的 `meta` 字段它不看。
+- **设置页**（点进插件详情就有，组件行的「配置」里也有一份）：
+  - 状态：已连接 / 没连上 / 已暂停，扩展是本地版还是商店版、版本号，正在控制的标签页（最多列 8 个）+「全部松手」。
+  - 开关：允许 DSH 控制浏览器（这里只能关，关了以后提示去 Chrome 面板里开）、页面里显示 DSH 光标。
+  - 没连上时：按本地版 / 商店版给安装步骤，「帮我打开安装页」按钮。
+  - 扩展较旧（商店里还没更新的版本没有 `panel` 操作）：能看状态，开关点不了，提示更新。
+- **怎么接的**：
+  - 浏览器那半是 `client.js`（DSH 的 lazy-CJS 格式，`window.__ModuleLoader__.load`），往 `plugins.bundle.config` 和 `plugins.row.config` 两个槽里各挂一个组件；
+    package.json 里 `dsh.client` 声明 `platform: 'web'` 和要注入的三个包，exports 放出 `./client`。
+  - 数据走一条 HTTP 路由 `/dsh-chrome-bridge/panel`，挂在 DSH 自带的 `webServer` 上（`ctx.inject(['webServer'])`，没有这个服务就不挂，工具照常注册）。
+    路由再转成 socket 上新加的 `panel` 操作。没用 DSH 的 schemastery 配置，因为那要 import `@deepseek-ai/*`，在插件进程里拿不到。
+- **把门**（webServer 本身不鉴权，Chrome 里任何网页都摸得到 127.0.0.1）：
+  只收本机连接；Host 必须是本机名（防 DNS 重绑定）；带了 Origin 就必须是 DSH 自己；POST 必须是 JSON（跨站发不出来）；body ≤ 4KB。
+  **恢复控制不开放**：socket 上的 `panel` 只能暂停，恢复只能在 Chrome 扩展面板里点 —— 模型也摸得到这条路。
+- 扩展里把暂停 / 光标 / 全部松手抽成共用函数，面板和设置页走同一套（日志里会写「DSH 设置页」）。
+- 测试：新加 `test-panel`（读状态、开关光标、暂停后网页操作被拒、socket 上恢复不了、全部松手、五条把门规则，最后还原）。
+  DSH 桌面端实测：卡片、设置页、光标开关来回切都对，路由没拒过 DSH 自己的请求。
+
+已知：商店版还是 1.10.0（没有 `panel`），商店用户在设置页会看到「扩展版本较旧」，等下一次传商店包。

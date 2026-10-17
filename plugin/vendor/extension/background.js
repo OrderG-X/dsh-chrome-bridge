@@ -158,7 +158,7 @@ async function handle(msg) {
 let hostInfo = null
 /** 用户在弹窗里按了暂停：除了这几个，其它操作一律拒绝 */
 let paused = false
-const PAUSE_ALLOWED = new Set(['version', 'reload', 'ping', 'logs', 'detach'])
+const PAUSE_ALLOWED = new Set(['version', 'reload', 'ping', 'logs', 'detach', 'panel'])
 
 /** 暂停只管网页；扩展自己的页面（弹窗）不算，不然连「解除暂停」的自动化测试都进不去 */
 async function isOwnPage(op, args) {
@@ -183,7 +183,7 @@ chrome.storage.local.get(['paused', 'showCursor']).then((v) => {
 const controlledCount = () => [...attached].filter((id) => !ownTabs.has(id)).length
 
 /** 不算「动作」的内部操作（版本检查、焦点模拟、光标跟随……） */
-const QUIET_OPS = new Set(['version', 'reload', 'ping', 'logs'])
+const QUIET_OPS = new Set(['version', 'reload', 'ping', 'logs', 'panel'])
 const QUIET_CDP = new Set(['Emulation.setFocusEmulationEnabled', 'Page.getNavigationHistory'])
 
 /** 会话 key → { key, kind, session, pid, first, last, ops, errors, tabs:Set } */
@@ -830,6 +830,32 @@ const OPS = {
     return { version: chrome.runtime.getManifest().version, id: chrome.runtime.id }
   },
 
+  /**
+   * DSH 插件设置页用：读状态、暂停、开关光标、全部松手。
+   * 只开放「更安全」的方向：这条通道 DSH 里的模型也摸得到（cb / socket），
+   * 所以「恢复控制」不给 —— 那一下只能用户在 Chrome 的扩展面板里点。
+   */
+  async panel({ action = 'state', on } = {}) {
+    if (action === 'pause') {
+      if (!on) throw new Error('恢复控制只能在 Chrome 工具栏的 DSH Bridge 面板里打开')
+      await setPaused(true, 'DSH 设置页')
+    } else if (action === 'cursor') {
+      await setShowCursor(!!on, 'DSH 设置页')
+    } else if (action === 'releaseAll') {
+      await releaseAllTabs()
+    } else if (action !== 'state') {
+      throw new Error(`panel 不认识的 action: ${action}`)
+    }
+    const st = await buildState()
+    return {
+      version: st.version, id: chrome.runtime.id, paused: st.paused, showCursor: st.showCursor,
+      attachedCount: st.attachedCount,
+      sessions: st.sessions.filter((x) => x.tabs.some((t) => t.attached)).length,
+      tabs: [...st.sessions.flatMap((x) => x.tabs), ...st.orphans]
+        .filter((t) => t.attached).slice(0, 8).map((t) => ({ title: t.title, url: t.url })),
+    }
+  },
+
   /** 改完扩展代码：拷文件 → cb reload，不用去 chrome://extensions 点刷新 */
   async reload() {
     setTimeout(() => chrome.runtime.reload(), 250)
@@ -1319,6 +1345,35 @@ async function diagnostics() {
   return lines.join('\n')
 }
 
+// ── 用户开关（弹窗和 DSH 设置页共用）────────────────────────────────────────
+
+async function releaseAllTabs() {
+  for (const id of [...attached]) await releaseTab(id)
+}
+
+/** where：谁按的（写进日志）。暂停时顺手全部松手。 */
+async function setPaused(on, where) {
+  paused = !!on
+  await chrome.storage.local.set({ paused })
+  log(`${paused ? '暂停' : '恢复'}了浏览器控制（${where}）`)
+  if (paused) await releaseAllTabs()
+  updateBadge()
+}
+
+async function setShowCursor(on, where) {
+  showCursor = !!on
+  await chrome.storage.local.set({ showCursor })
+  log(`${showCursor ? '打开' : '关掉'}了页内光标（${where}）`)
+  if (!showCursor) {
+    for (const id of [...cursorReady]) {
+      cursorReady.delete(id)
+      cursorPos.delete(id)
+      await hidePageCursor(id)
+      await markCursor(id, false)
+    }
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !msg.popup || sender.id !== chrome.runtime.id) return
   const run = async () => {
@@ -1334,30 +1389,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         await releaseTab(msg.tabId)
         return buildState()
       case 'releaseAll':
-        for (const id of [...attached]) await releaseTab(id)
+        await releaseAllTabs()
         return buildState()
       case 'focus':
         await OPS.activate({ tabId: msg.tabId })
         return buildState()
       case 'pause':
-        paused = !!msg.on
-        await chrome.storage.local.set({ paused })
-        log(paused ? '用户暂停了浏览器控制' : '用户恢复了浏览器控制')
-        if (paused) for (const id of [...attached]) await releaseTab(id)
-        updateBadge()
+        await setPaused(!!msg.on, '弹窗')
         return buildState()
       case 'cursor':
-        showCursor = !!msg.on
-        await chrome.storage.local.set({ showCursor })
-        log(showCursor ? '用户打开了页内光标' : '用户关掉了页内光标')
-        if (!showCursor) {
-          for (const id of [...cursorReady]) {
-            cursorReady.delete(id)
-            cursorPos.delete(id)
-            await hidePageCursor(id)
-            await markCursor(id, false)
-          }
-        }
+        await setShowCursor(!!msg.on, '弹窗')
         return buildState()
       case 'diagnostics':
         return { text: await diagnostics() }

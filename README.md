@@ -120,6 +120,7 @@ Until step 2 is done the `browser_*` tools fail **loudly with exactly these step
 ### 👀 What you see while it works
 
 - **Click the toolbar icon** for a live panel: whether Chrome ↔ local host ↔ DSH are connected, **which DSH sessions are driving which tabs** (jump to a tab, or release it with one click), the last actions with their errors, a **pause switch** that makes the browser off-limits until you turn it back on, and *copy diagnostics* for bug reports. The icon badge shows how many tabs are under control (`!` = host down, `⏸` = paused).
+- **In DSH, Plugins → Chrome Bridge** has a settings card too: connection status, whether the extension is the local or the Web Store build, which tabs are under control (release them all with one click), plus pause and on-page-cursor switches. When it isn't connected it tells you the missing step and can open the install page for you. **Resuming control only works from the Chrome extension panel** — the model can reach the DSH side as well, so that click has to be yours.
 - Every tab the agent touches **joins a blue tab group titled "DSH agent 正在操作"**, and the group is taken apart the moment it lets go — after 60s idle, on `cb detach`, if the tab is closed, or if you press *Cancel* on Chrome's debugging banner.
 - The little mouse (favicon + toolbar icon) means **there is actually a cursor in that page**: it lights up when the agent draws its on-page cursor (clicking, typing), and goes away when that cursor is hidden, the page navigates, or the agent lets go. Reading a page never lights it up.
 - Inside the page, the on-page cursor draws every click, keystroke, drag and scroll — and it appears in screenshots, so you and the model see the same picture. If it gets in your way, switch it off in the panel (the actions still happen, it just isn't drawn). Password fields only ever show dots.
@@ -184,7 +185,7 @@ dsh-chrome-bridge uninstall
 
 Be honest about what this is: **the extension can read and control every page you are logged into.**
 
-- The bridge is **local-only**. Native messaging is a private pipe; the CLI socket is `0600` and additionally token-guarded. **No network listener is opened.**
+- The bridge is **local-only**. Native messaging is a private pipe; the CLI socket is `0600` and additionally token-guarded. **It opens no network listener of its own** (the DSH settings card goes through DSH's built-in local web server; that route only accepts loopback, rejects cross-site requests, and cannot resume control).
 - Chrome shows a permanent *"… is debugging this browser"* banner while attached. That banner is the point — you can always see that it is active.
 - Anything that can already run as your user can read your Chrome profile; this does not widen that boundary. It does make it *convenient*, which is worth a thought before leaving an agent unattended.
 - **Once the DSH plugin is installed, the model drives your browser without asking.** Plugin tools run inside the DSH host process, so they are *not* gated by the workspace sandbox or the approval prompts that guard `bash`. That is what "native" buys you — and it means an unattended agent holds your browser. Disable the plugin in the sidebar if you want that gate back.

@@ -21,6 +21,7 @@ import { ensureInstalled, installHint, assistInstall, paths, extensionId } from 
 import { snapshot, locate, focusShadow, elementBox } from './refs.js'
 import { consoleLog, networkLog, responseBody, clearLogs } from './devtools.js'
 import { historyNav, waitUntil } from './nav.js'
+import { PANEL_ROUTE, panelHandler } from './panel.js'
 import { drag } from './drag.js'
 
 /**
@@ -315,6 +316,26 @@ export function apply(ctx, config) {
     trace(`setup 异常（忽略）: ${e && e.message}`)
   }
   refreshExtension()
+
+  // DSH 插件页里的设置卡（client.js）靠这条路由拿状态、按开关。webServer 是可选的：
+  // 没有网页端的 profile（headless）里就不挂，工具照常注册。
+  // 挂不上也只是设置页没数据，绝不能连累工具注册
+  try {
+    if (typeof ctx.inject === 'function') {
+      ctx.inject(['webServer'], (sub) => {
+        if (!sub || typeof sub.effect !== 'function' || !sub.webServer) return
+        sub.effect(() => sub.webServer.register({
+          kind: 'exact',
+          path: PANEL_ROUTE,
+          handler: panelHandler({ call, sock: SOCK, origin: () => sub.webServer.getOrigin(), trace }),
+        }), 'chrome-bridge: settings panel route')
+        trace(`设置页路由已挂上 ${PANEL_ROUTE}`)
+      })
+    }
+  } catch (e) {
+    trace(`设置页路由没挂上（忽略）: ${e && e.message}`)
+  }
+
   const tools = [
     // ── 标签页 ──────────────────────────────────────────────────────────────
     defineTool({
