@@ -157,8 +157,32 @@ async function detachIdle() {
 
 const GROUP_TITLE = 'DSH agent 正在操作'
 const CURSOR_ICON = { 16: 'icons/cursor16.png', 32: 'icons/cursor32.png', 48: 'icons/cursor48.png' }
+// 标签页上的小鼠标：把页面 favicon 临时换成它（data URL，绕开页面 CSP 与 web_accessible_resources）
+const CURSOR_FAVICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAD+klEQVR4nMWXTWxUVRTHf+e8N9NpS/0sITSoSSGRdIFFF35FVxoIAQPRolsMG0qMpKmKO10YY9BKNIaNK7ck2kAXLtTgxo90IWpMIEH8QKkJjUBb+jHz3j3mvNcRJW1nOjPGs5p57977+59zzznvXgEYGLDo+HFJt++3DaV2nguwyyxswjQGE5oyMSQkInpO4eT8HO9+/L78VmVK9cfOA5XdcTF+T5WeNIWQ+mRrjn1dBBpBFEEIXEzKycGxY4VRZ2fe7TxguwolTjg0JCEBIkSa9PwGM3NvUo01djGVeZ4YOyYnZc8hW59WwncSSXeaWipI1FLwjTqwNIokstQmo4Ju0aQchuKididJWBbusWhVPJzhrIxZDkNqwu40xXSZkPvThTIkKai2RoSznOlsxegNqWe66FLwcgXuuRtu6YJrc3kiNW+iGdPodTHL+qUCs3PwUL/wxpDQsxamZiBuUZY4u2ZQfcT0rLFhHRw9LNy/BS5PQaStyQutZ5DDvIhuvQlee14Y2AZXZ/JnHqX/XICbe+uJ6L1p8BlheF/+33PEBTZquprB1XJMA+x4RHj9kHBzF8zMNp4X2sgk99hFeHV4XvRtXMyLBkRoIwKqIkKAdbfDkWFhx6O5iNU2LW1UQDbZRRgUC/DCPmHwaZhfgCSpv2lpMwKyBSSvBt+SvduFVwaFtmLeP+pJTqUF5iGvwh7sh3deFnrvyJOzVplqI0D32Pe/av6tmLqWt2rvD923wasHhXv7YKGyck7EjcCrieb77x7+eRWG3zTMRS0+97L0PPDKyE4CrYhACDnYgV+czuF+elq/Fu7rg98v5WGfnsnHTF6uvQXxajwvxHBlGl4asazk+jcLpbb8/ZOPC59+bRlQqqta7UOd1gN3L93zXydg+Ihx4Y9cyKnxHFhJ4K4eeHirf7iuV0Y9J0qtJ+xdncLEJXjxLeOXCehsz7N+7NS/Dyp7t0nWEzwH6jVdEW5QKsE3Z4zDb1u2r2vac487SnD2Zxj/PhfjQjbdCVs3L5ZfKxqRuYAifPUtTF6Bjva84WTvFjvh6Ge5u9Wy3P9UnhdZRdQjwGzloS7CO5uX1T9r3393luD0WTjzU96OXdyPF6C9rb5tcHaMcF4j2RhSn7L08WzZOvYzQgIffmI89oDwwQnjh3OwpqPWB8mCRippaudjMUajiOEksaCrPGNlUWiHL0/D5+OWbYsfXqvbtOw8MytEaEgY1bioI0k5TMaxRn5poAFz3b7vnpi14M5wVsYs6oh+dFQmQtBnNRKiSCPMksVrVFPfhyUGmK/tDGc509nqF0S/o1Xmkz0iXCy0Zbc372er1bCCCb6mr+0MZznz78vp/3k9/wvRRdA2nNkwIgAAAABJRU5ErkJggg=='
 const IDLE_ICON = { 16: 'icons/icon16.png', 32: 'icons/icon32.png', 48: 'icons/icon48.png' }
 const groupedTabs = new Map() // tabId -> groupId（只记我们自己建的组）
+
+/** 受控标签页的 favicon 换成小鼠标（松手还原）。页面导航后 favicon 自然复原，下次控制再补。 */
+async function setTabFavicon(tabId, on) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: Number(tabId) },
+      func: (on, href) => {
+        const ID = 'dsh-bridge-cursor-favicon'
+        const old = document.getElementById(ID)
+        if (!on) { if (old) old.remove(); return }
+        if (old) return
+        const l = document.createElement('link')
+        l.id = ID
+        l.rel = 'icon'
+        l.type = 'image/png'
+        l.href = href
+        document.head.appendChild(l)
+      },
+      args: [on, CURSOR_FAVICON],
+    })
+  } catch {}
+}
 
 async function markTab(tabId) {
   const id = Number(tabId)
@@ -169,6 +193,7 @@ async function markTab(tabId) {
     await chrome.action.setBadgeText({ tabId: id, text: '' })
     await chrome.action.setTitle({ tabId: id, title: 'DSH agent 正在操作这个标签页' })
   } catch {}
+  await setTabFavicon(id, true)
   if (groupedTabs.has(id)) return
   try {
     const groupId = await chrome.tabs.group({ tabIds: [id] })
@@ -186,6 +211,7 @@ async function unmarkTab(tabId) {
     await chrome.action.setBadgeText({ tabId: id, text: '' })
     await chrome.action.setTitle({ tabId: id, title: '' })
   } catch {}
+  await setTabFavicon(id, false)
   if (!groupedTabs.has(id)) return
   groupedTabs.delete(id)
   try { await chrome.tabs.ungroup([id]) } catch {}
