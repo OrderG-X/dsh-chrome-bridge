@@ -75,6 +75,9 @@ function connect() {
     const err = chrome.runtime.lastError
     if (err) log('原生宿主断开:', err.message)
     port = null
+    for (const id of [...attached]) {
+      chrome.debugger.detach({ tabId: id }).catch(() => {})
+    }
     attached.clear()
     setTimeout(connect, RECONNECT_MS)
   })
@@ -114,7 +117,7 @@ function friendly(e) {
     return new Error('这个标签页被别的调试器占着（多半是 DevTools 开着）——关掉 DevTools 再试')
   }
   if (m.includes('Detached while handling command') || m.includes('Debugger is not attached')) {
-    return new Error('调试会话断了（页面刚导航过？）——重试一次')
+    return new Error('这个标签页空闲被断开了（或页面刚导航过）——直接重试即可，会自动重连')
   }
   if (m.includes('Cannot find context with specified id')) return new Error('页面刚跳转过，执行上下文没了——重试一次')
   if (m.includes('No dialog is showing')) return new Error('当前没有弹窗挡着（可能被 Chrome 推迟到标签页获得焦点时才弹）')
@@ -164,7 +167,8 @@ const CURSOR_ICON = { 16: 'icons/cursor16.png', 32: 'icons/cursor32.png', 48: 'i
 const CURSOR_FAVICON = 'data:image/png;base64,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'
 const IDLE_ICON = { 16: 'icons/icon16.png', 32: 'icons/icon32.png', 48: 'icons/icon48.png' }
 const groupedTabs = new Map() // tabId -> groupId（只记我们自己建的组）
-let ourGroupId = null          // 我们那个组（所有受控标签页共用一个）
+const ourGroup = new Map()     // windowId -> groupId（标签组是 per-window 的）
+const tabEpoch = new Map()     // tabId -> 递增序号，用来发现"mark 与 unmark 撞车"
 
 /** 受控标签页的 favicon 换成小鼠标（松手还原）。页面导航后 favicon 自然复原，下次控制再补。 */
 async function setTabFavicon(tabId, on) {
@@ -190,6 +194,7 @@ async function setTabFavicon(tabId, on) {
 
 async function markTab(tabId) {
   const id = Number(tabId)
+  tabEpoch.set(id, (tabEpoch.get(id) || 0) + 1)
   // 分组 = "这个标签页正在被操作"；标签上的小鼠标只跟页内光标走（markCursor）
   await ensureGroup(id)
 }
@@ -201,8 +206,10 @@ async function markTab(tabId) {
 async function ensureGroup(tabId) {
   const id = Number(tabId)
   if (groupedTabs.has(id)) return
+  let wid = null
+  try { wid = (await chrome.tabs.get(id)).windowId } catch {}
   const candidates = []
-  if (ourGroupId != null) candidates.push(ourGroupId)
+  if (wid != null && ourGroup.has(wid)) candidates.push(ourGroup.get(wid))
   try {
     for (const g of await chrome.tabGroups.query({ title: GROUP_TITLE })) {
       if (!candidates.includes(g.id)) candidates.push(g.id)
@@ -212,14 +219,15 @@ async function ensureGroup(tabId) {
     try {
       await chrome.tabs.group({ tabIds: [id], groupId: gid })
       groupedTabs.set(id, gid)
-      ourGroupId = gid
+      if (wid != null) ourGroup.set(wid, gid)
+      await chrome.tabGroups.update(gid, { title: GROUP_TITLE, color: 'blue' })
       return
     } catch {}
   }
   try {
     const gid = await chrome.tabs.group({ tabIds: [id] })
     groupedTabs.set(id, gid)
-    ourGroupId = gid
+    if (wid != null) ourGroup.set(wid, gid)
     await chrome.tabGroups.update(gid, { title: GROUP_TITLE, color: 'blue' })
   } catch (e) {
     console.log('[dsh-bridge] 分组失败（不影响干活）:', String(e && e.message || e))
@@ -228,7 +236,11 @@ async function ensureGroup(tabId) {
 
 async function unmarkTab(tabId) {
   const id = Number(tabId)
+  const epoch = tabEpoch.get(id) || 0      // 竞态守卫：await 期间如果有新的 mark，就放弃这次 unmark
+  cursorReady.delete(id)      // 必修：不清的话，松手后小鼠标灭了就再也不亮（页面里的光标其实还在）
+  await hidePageCursor(id)    // 尽力把页内光标收掉（松手不留痕）
   await markCursor(id, false)
+  if ((tabEpoch.get(id) || 0) !== epoch) return   // 期间又被 mark 了，别拆
   if (!groupedTabs.has(id)) return
   groupedTabs.delete(id)
   try { await chrome.tabs.ungroup([id]) } catch {}
@@ -254,9 +266,9 @@ async function reconcileGroups() {
       for (const t of tabs) {
         if (attachedIds.has(t.id)) {
           groupedTabs.set(t.id, g.id)
-          ourGroupId = g.id
-        } else {
-          groupedTabs.set(t.id, g.id)   // 先认领，unmarkTab 才会真的去拆
+          if (t.windowId != null) ourGroup.set(t.windowId, g.id)
+        } else if (!attached.has(t.id)) {   // 重新确认一次：启动瞬间并发进来的 op 别被误拆
+          groupedTabs.set(t.id, g.id)       // 先认领，unmarkTab 才会真的去拆
           await unmarkTab(t.id)
         }
       }
@@ -286,28 +298,57 @@ async function ensure(tabId) {
 // 正在执行的 CDP 调用计数：空闲断开不能把"正干着活"的标签页掐了
 const inflight = new Map()
 
-function send(tabId, method, params) {
+async function send(tabId, method, params) {
   const id = Number(tabId)
+  // 必修：以前只有 evaluate 之前才 ensure，key/hover/scroll/dialog 这些直接 send 的 op
+  // 在空闲松手后永远失败。统一在这里 ensure：既能自动重连，也顺带刷新 lastUsed。
+  await ensure(id)
   inflight.set(id, (inflight.get(id) || 0) + 1)
-  return chrome.debugger.sendCommand({ tabId: id }, method, params || {})
-    .finally(() => {
-      const n = (inflight.get(id) || 1) - 1
-      if (n <= 0) inflight.delete(id); else inflight.set(id, n)
-    })
+  const p = chrome.debugger.sendCommand({ tabId: id }, method, params || {})
+  try {
+    // 兜底：任何 CDP 命令都不该把 op 挂死（历史上 mouseWheel 就不回包）
+    return await Promise.race([
+      p,
+      new Promise((_, rej) => setTimeout(() => rej(new Error(`CDP ${method} 15 秒没回应`)), 15000)),
+    ])
+  } finally {
+    const n = (inflight.get(id) || 1) - 1
+    if (n <= 0) inflight.delete(id); else inflight.set(id, n)
+  }
+}
+
+/**
+ * 发出去、不要求回包的 CDP 命令。
+ * 实测：Input.dispatchMouseEvent 的 mouseWheel 在 Chrome 155 上**事件生效但不回包**，
+ * 用 send() 等回复会把 scroll 挂死（客户端 45 秒超时）。这里等一小会儿就走。
+ */
+async function sendNoReply(tabId, method, params, graceMs = 1500) {
+  const id = Number(tabId)
+  await ensure(id)
+  inflight.set(id, (inflight.get(id) || 0) + 1)
+  try {
+    await Promise.race([
+      chrome.debugger.sendCommand({ tabId: id }, method, params || {}).catch(() => {}),
+      new Promise((res) => setTimeout(res, graceMs)),
+    ])
+  } finally {
+    const n = (inflight.get(id) || 1) - 1
+    if (n <= 0) inflight.delete(id); else inflight.set(id, n)
+  }
 }
 
 chrome.debugger.onDetach.addListener((src) => {
   if (src && src.tabId != null) {
     attached.delete(src.tabId)
     lastUsed.delete(src.tabId)
-    unmarkTab(src.tabId)   // 用户点掉 Chrome 那条调试提示也算松手
+    unmarkTab(src.tabId).catch((e) => log('unmark 失败:', String(e && e.message || e)))   // 用户点掉调试提示也算松手
   }
 })
 
 chrome.debugger.onEvent.addListener((src, method, params) => {
   if (method === 'Page.loadEventFired') {
     cursorReady.delete(src.tabId)
-    markCursor(src.tabId, false)   // 导航后页内光标没了，标签上的小鼠标跟着灭
+    markCursor(src.tabId, false).catch(() => {})   // 导航后页内光标没了，标签上的小鼠标跟着灭
     const w = loadWaiters.get(src.tabId)
     if (w) { loadWaiters.delete(src.tabId); clearTimeout(w.timer); w.resolve() }
   }
@@ -318,6 +359,11 @@ chrome.debugger.onEvent.addListener((src, method, params) => {
     dialogs.delete(src.tabId)
   }
   if (method === 'Network.requestWillBeSent') {
+    // WebSocket/SSE 这类连接永不 finished，netPending 得有个上限（NET 有 400，它原来没有）
+    if (netPending.size > NET_MAX) {
+      const oldest = netPending.keys().next().value
+      netPending.delete(oldest)
+    }
     netPending.set(params.requestId, {
       tabId: src.tabId, method: params.request.method, url: params.request.url,
       type: params.type, at: Date.now(),
@@ -411,6 +457,17 @@ async function injectCursor(tabId, script) {
     await markCursor(tabId, true)
   }
   return true
+}
+
+/** 用 scripting 在 MAIN world 收掉页内光标（不依赖 CDP，调试器已断开时也能收）。 */
+async function hidePageCursor(tabId) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId: Number(tabId) },
+      world: 'MAIN',
+      func: () => { try { window.__dshCursor && window.__dshCursor.hide() } catch {} },
+    })
+  } catch {}
 }
 
 /** 标签上的小鼠标只跟"页内光标在不在"：在 → 亮；hide / 导航 / 松手 → 灭。 */
@@ -738,12 +795,20 @@ const OPS = {
   },
 
   async scroll({ tabId, x = 200, y = 200, deltaY = 600, deltaX = 0 }) {
-    await send(tabId, 'Input.dispatchMouseEvent', {
+    const before = await evaluate(tabId, 'Math.round(window.scrollY)')
+    await sendNoReply(tabId, 'Input.dispatchMouseEvent', {
       type: 'mouseWheel', x: Math.round(x), y: Math.round(y),
       deltaX: Math.round(deltaX), deltaY: Math.round(deltaY),
     })
-    const after = await evaluate(tabId, '({ scrollY: Math.round(window.scrollY), pageHeight: Math.round(document.documentElement.scrollHeight) })')
-    return { deltaY, ...after }
+    let after = await evaluate(tabId, '({ scrollY: Math.round(window.scrollY), pageHeight: Math.round(document.documentElement.scrollHeight) })')
+    let via = 'wheel'
+    if (after.scrollY === before) {
+      // 后台/不可见标签页里 Chrome 不会为滚轮合成帧（实测 mouseWheel 事件发了但页面不动），
+      // 退回 JS 滚动 —— 想要的效果是"页面滚下去"，不是"必须是合成事件"。
+      after = await evaluate(tabId, `(() => { window.scrollBy(0, ${Math.round(deltaY)}); return { scrollY: Math.round(window.scrollY), pageHeight: Math.round(document.documentElement.scrollHeight) } })()`)
+      via = 'js'
+    }
+    return { deltaY, via, ...after }
   },
 
   async focus({ tabId, selector }) {
@@ -877,24 +942,32 @@ const OPS = {
       await evaluate(tabId, script)
       await evaluate(tabId, '(() => { if (!window.__dshCursor) throw new Error("光标脚本没装上"); return "ok" })()')
     }
-    if (action === 'hide') { await evaluate(tabId, 'window.__dshCursor.hide()'); cursorReady.delete(Number(tabId)); await markCursor(tabId, false); return { action } }
+    if (action === 'hide') {
+      try { await evaluate(tabId, 'window.__dshCursor.hide()') }
+      finally { cursorReady.delete(Number(tabId)); await markCursor(tabId, false) }
+      return { action }
+    }
     if (action === 'move') { await evaluate(tabId, `window.__dshCursor.move(${Number(x)}, ${Number(y)})`); return { action, x, y } }
     if (action === 'click') {
       await evaluate(tabId, `window.__dshCursor.move(${Number(x)}, ${Number(y)})`)
       await evaluate(tabId, `window.__dshCursor.click(${Number(x)}, ${Number(y)})`)
       return { action, x, y }
     }
-    if (action === 'clear') { await evaluate(tabId, 'window.__dshCursor && window.__dshCursor.hide()'); cursorReady.delete(Number(tabId)); await markCursor(tabId, false); return { action } }
+    if (action === 'clear') {
+      try { await evaluate(tabId, 'window.__dshCursor && window.__dshCursor.hide()') }
+      finally { cursorReady.delete(Number(tabId)); await markCursor(tabId, false) }
+      return { action }
+    }
     throw new Error(`不认识的光标动作: ${action}（move/click/hide/clear）`)
   },
 }
 
 // ── 保活 / 启动 ─────────────────────────────────────────────────────────────
 
-chrome.alarms.create('dsh-keepalive', { periodInMinutes: 0.5 })
+chrome.alarms.create('dsh-keepalive', { periodInMinutes: 1 })
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name !== 'dsh-keepalive') return
-  detachIdle()                       // 空闲超过 60 秒的标签页断开调试
+  detachIdle().catch((e) => log('detachIdle 失败:', String(e && e.message || e)))   // 空闲超过 60 秒的标签页断开调试
   if (!port) connect()
   else post({ id: 'ka-' + Date.now(), ok: true, keepalive: true })
 })
@@ -907,5 +980,9 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   attached.delete(tabId)
   lastUsed.delete(tabId)
   groupedTabs.delete(tabId)   // 标签页都没了，组也轮不到我们拆
+  cursorReady.delete(tabId)
+  tabEpoch.delete(tabId)
+  dialogs.delete(tabId)
+  loadWaiters.delete(tabId)
 })
 connect()

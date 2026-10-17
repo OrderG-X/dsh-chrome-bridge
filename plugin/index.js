@@ -334,6 +334,8 @@ export function apply(ctx, config) {
         files: { type: 'array', items: { type: 'string' }, description: 'action=upload 的本地文件绝对路径' },
         dy: { type: 'integer', description: 'action=scroll 的纵向滚动量，默认 600（向下为正）' },
         dx: { type: 'integer', description: 'action=scroll 的横向滚动量，默认 0' },
+        x: { type: 'integer', description: 'action=hover 且不用 selector 时的视口 X 坐标' },
+        y: { type: 'integer', description: 'action=hover 且不用 selector 时的视口 Y 坐标' },
       },
       output: textOutput,
       presentCall: present('Browser input'),
@@ -366,7 +368,15 @@ export function apply(ctx, config) {
             return { text: `已聚焦 ${args.selector}` }
           }
           case 'hover': {
-            const r = await call('hover', { tabId, x: Number(args.dx || 0), y: Number(args.dy || 0), selector: args.selector || undefined })
+            if (!args.selector && (args.x === undefined || args.y === undefined)) {
+              throw new Error('action=hover 需要 selector，或者给 x/y 坐标')
+            }
+            const r = await call('hover', {
+              tabId,
+              x: args.selector ? undefined : Number(args.x),
+              y: args.selector ? undefined : Number(args.y),
+              selector: args.selector || undefined,
+            })
             return { text: `已悬停 @ (${r.x}, ${r.y})${r.target ? ` ${r.target.tag}「${r.target.text}」` : ''}` }
           }
           case 'scroll': {
@@ -446,8 +456,12 @@ export function apply(ctx, config) {
         const attachments = ctx.get('attachments')
         if (attachments) {
           try {
+            const fmt = String(args.format || r.format || 'png').toLowerCase()
+            const isJpeg = fmt === 'jpeg' || fmt === 'jpg'
             const [ref] = await attachments.saveImages([{
-              data: buf, mediaType: 'image/png', name: `page-${Date.now()}.png`,
+              data: buf,
+              mediaType: isJpeg ? 'image/jpeg' : 'image/png',
+              name: `page-${Date.now()}.${isJpeg ? 'jpg' : 'png'}`,
             }])
             const token = crypto.randomUUID()
             shotRefs.set(token, ref)
@@ -457,7 +471,7 @@ export function apply(ctx, config) {
             // 存不进附件库就退回文件，别让截图功能整个挂掉
           }
         }
-        const file = path.join(os.tmpdir(), `dsh-shot-${Date.now()}.png`)
+        const file = path.join(os.tmpdir(), `dsh-shot-${Date.now()}.${String(args.format || '').toLowerCase().startsWith('j') ? 'jpg' : 'png'}`)
         fs.writeFileSync(file, buf)
         return { text: `${note}\n（附件库不可用，已存到 ${file}，可以用 read_image 看）`, token: '' }
       },

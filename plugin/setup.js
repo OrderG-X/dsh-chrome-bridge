@@ -187,6 +187,17 @@ export function ensureInstalled(options = {}) {
 export function installHint(home = os.homedir()) {
   const s = installState(home)
   if (!s.vendor) return '插件包里没有自带宿主：请重新用 release tarball 安装本插件（README 的 Install 一节）。'
+  if (process.platform !== 'darwin') {
+    return '浏览器桥只支持 macOS：native messaging 的注册路径是 macOS 专有的，其他系统上装不了宿主（插件本身不会静默失败）。'
+  }
+  if (!s.hostCopied || !s.registered) {
+    return [
+      '宿主或 native messaging 注册没写成功（多半是权限问题）：',
+      `宿主目录 ${s.hostDir}${s.hostCopied ? ' ✅' : ' ❌'}`,
+      `注册文件 ${s.nmFile}${s.registered ? ' ✅' : ' ❌'}`,
+      '可以手动跑一次：./bridge setup（源码仓库里），或者用源码的 install.sh。',
+    ].join('\n')
+  }
   return [
     '浏览器桥还差最后一步（一次性）：',
     '1. Chrome 打开 chrome://extensions',
