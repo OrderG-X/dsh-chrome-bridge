@@ -97,7 +97,7 @@ print(ok[0]['id'] if ok else '')")
     # 发版用：打出 npm 风格的 tgz（package/ 前缀），附加到 GitHub Release
     OUT="/tmp/dsh-chrome-bridge.tgz"
     rm -f "$OUT"
-    ( cd "$REPO/plugin" && tar -czf "$OUT" -s ',^,package/,' package.json index.js cordis.patch.yml icon.svg )
+    ( cd "$REPO/plugin" && tar -czf "$OUT" -s ',^,package/,' package.json index.js image-guard.js cordis.patch.yml icon.svg )
     echo "打包完成 ${OUT}（$(wc -c < "$OUT" | tr -d ' ') bytes）"
     echo "发版时记得附加（资产名必须不带版本号，目录条目用的是 latest/download）："
     echo "  gh release upload <tag> ${OUT} --clobber"
