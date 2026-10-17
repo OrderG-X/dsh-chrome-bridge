@@ -186,14 +186,7 @@ async function setTabFavicon(tabId, on) {
 
 async function markTab(tabId) {
   const id = Number(tabId)
-  try {
-    // 工具栏图标换成"小鼠标"+ 角标点灯：只有被控制的这个标签页会变
-    // 图标本身换成"小鼠标"就够了；角标不再点灯（蓝底蓝点看不见）
-    await chrome.action.setIcon({ tabId: id, path: CURSOR_ICON })
-    await chrome.action.setBadgeText({ tabId: id, text: '' })
-    await chrome.action.setTitle({ tabId: id, title: 'DSH agent 正在操作这个标签页' })
-  } catch {}
-  await setTabFavicon(id, true)
+  // 分组 = "这个标签页正在被操作"；标签上的小鼠标只跟页内光标走（markCursor）
   if (groupedTabs.has(id)) return
   try {
     const groupId = await chrome.tabs.group({ tabIds: [id] })
@@ -206,12 +199,7 @@ async function markTab(tabId) {
 
 async function unmarkTab(tabId) {
   const id = Number(tabId)
-  try {
-    await chrome.action.setIcon({ tabId: id, path: IDLE_ICON })
-    await chrome.action.setBadgeText({ tabId: id, text: '' })
-    await chrome.action.setTitle({ tabId: id, title: '' })
-  } catch {}
-  await setTabFavicon(id, false)
+  await markCursor(id, false)
   if (!groupedTabs.has(id)) return
   groupedTabs.delete(id)
   try { await chrome.tabs.ungroup([id]) } catch {}
@@ -280,6 +268,7 @@ chrome.debugger.onDetach.addListener((src) => {
 chrome.debugger.onEvent.addListener((src, method, params) => {
   if (method === 'Page.loadEventFired') {
     cursorReady.delete(src.tabId)
+    markCursor(src.tabId, false)   // 导航后页内光标没了，标签上的小鼠标跟着灭
     const w = loadWaiters.get(src.tabId)
     if (w) { loadWaiters.delete(src.tabId); clearTimeout(w.timer); w.resolve() }
   }
@@ -379,8 +368,20 @@ async function injectCursor(tabId, script) {
   if (!cursorReady.has(Number(tabId))) {
     await evaluate(tabId, script)
     cursorReady.add(Number(tabId))
+    // 语义：标签页上出现小鼠标 = 这个页面里真的有一只鼠标（页内光标已就位）
+    await markCursor(tabId, true)
   }
   return true
+}
+
+/** 标签上的小鼠标只跟"页内光标在不在"：在 → 亮；hide / 导航 / 松手 → 灭。 */
+async function markCursor(tabId, on) {
+  const id = Number(tabId)
+  try {
+    await chrome.action.setIcon({ tabId: id, path: on ? CURSOR_ICON : IDLE_ICON })
+    await chrome.action.setTitle({ tabId: id, title: on ? 'DSH agent 正在操作这个标签页（页内有一只鼠标）' : '' })
+  } catch {}
+  await setTabFavicon(id, on)
 }
 
 async function paintCursor(tabId, script, x, y, text) {
@@ -837,14 +838,14 @@ const OPS = {
       await evaluate(tabId, script)
       await evaluate(tabId, '(() => { if (!window.__dshCursor) throw new Error("光标脚本没装上"); return "ok" })()')
     }
-    if (action === 'hide') { await evaluate(tabId, 'window.__dshCursor.hide()'); return { action } }
+    if (action === 'hide') { await evaluate(tabId, 'window.__dshCursor.hide()'); cursorReady.delete(Number(tabId)); await markCursor(tabId, false); return { action } }
     if (action === 'move') { await evaluate(tabId, `window.__dshCursor.move(${Number(x)}, ${Number(y)})`); return { action, x, y } }
     if (action === 'click') {
       await evaluate(tabId, `window.__dshCursor.move(${Number(x)}, ${Number(y)})`)
       await evaluate(tabId, `window.__dshCursor.click(${Number(x)}, ${Number(y)})`)
       return { action, x, y }
     }
-    if (action === 'clear') { await evaluate(tabId, 'window.__dshCursor && window.__dshCursor.hide()'); return { action } }
+    if (action === 'clear') { await evaluate(tabId, 'window.__dshCursor && window.__dshCursor.hide()'); cursorReady.delete(Number(tabId)); await markCursor(tabId, false); return { action } }
     throw new Error(`不认识的光标动作: ${action}（move/click/hide/clear）`)
   },
 }
