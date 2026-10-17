@@ -1,6 +1,6 @@
 {
   "name": "dsh-chrome-bridge",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "DSH plugin: native browser_* tools that drive the Chrome you are already using — over native messaging + CDP. No WebSocket, no port, no Connect button. The native host and the MV3 extension ship inside this package and are installed automatically on first load; the only manual step left is picking ~/dsh-bridge-extension once at chrome://extensions (Chrome ≥137 has no programmatic extension install). Until then browser_* tools fail loudly with those exact steps.",
   "type": "module",
   "license": "MIT",
