@@ -2,6 +2,7 @@
 # bridge —— DSH Bridge 的统一管理入口
 #
 #   ./bridge install     首次安装（写注册文件、装 cb、提示加载扩展）
+#   ./bridge setup       引导式安装：能自动的都自动，只剩 Chrome 里那一次点选，装好自动检测
 #   ./bridge update      改完代码同步到已装目录，并热重载扩展（不用点 Chrome 刷新）
 #   ./bridge status      仓库版本 / 已装版本 / 实际运行版本 + 连接状态
 #   ./bridge reload      只热重载扩展
@@ -28,6 +29,54 @@ inst_ver() { manifest_ver "$EXT_DIR/manifest.json" 未安装; }
 case "${1:-help}" in
   install)
     exec "$REPO/install.sh"
+    ;;
+
+  setup)
+    # 引导式安装：能自动的都自动（宿主 + 注册 + 插件），只剩 Chrome 里那一次点选。
+    # 那一下替不了（Chrome 137+ 没有 --load-extension，商店也不收 debugger 权限），
+    # 所以至少把用户送到那一下面前：页面帮你打开、路径帮你复制，装好自动检测。
+    echo "═══ dsh-chrome-bridge 引导安装 ═══"
+    node -e 'import(process.argv[1]).then(m => {
+      const r = m.ensureInstalled()
+      console.log(r.ok ? "① 宿主与 native 注册已就位" : "① 自动安装没成：" + r.reason)
+    })' "$REPO/plugin/setup.js"
+    if [ -S /tmp/dsh-bridge.sock ]; then
+      echo "② 扩展已连上 —— 不用再点任何东西 ✅"
+      "$CB" status
+      exit 0
+    fi
+    printf '%s\n' "$EXT_DIR" | pbcopy
+    OPENED=0
+    if pgrep -x "Google Chrome" >/dev/null; then
+      open -g -a "Google Chrome" "chrome://extensions" && OPENED=1
+    fi
+    echo
+    echo "② 还差一次点选（一辈子就一次）："
+    if [ "$OPENED" = 1 ]; then
+      echo "   · 已经帮你在 Chrome 里打开了 chrome://extensions（后台标签页，切过去）"
+    else
+      echo "   · 先打开 Chrome，访问 chrome://extensions"
+    fi
+    echo "   · 右上角打开「开发者模式」"
+    echo "   · 点左上「加载已解压的扩展程序」"
+    echo "   · 文件框里：⌘⇧G → ⌘V（路径已在剪贴板）→ 回车 → 回车"
+    echo "     文件夹：$EXT_DIR"
+    echo
+    echo "我在这儿等（最多 3 分钟，⌃C 可退出）…"
+    for _ in $(seq 1 180); do
+      if [ -S /tmp/dsh-bridge.sock ]; then
+        echo
+        echo "✅ 搞定，扩展连上了："
+        "$CB" status
+        exit 0
+      fi
+      sleep 1
+    done
+    echo
+    echo "⏳ 还没连上，多半是这两条："
+    echo "   · 「开发者模式」没打开（右上角那个开关）"
+    echo "   · 选的文件夹不对（要选 $EXT_DIR）"
+    echo "再跑一次 ./bridge setup 即可。"
     ;;
 
   update)

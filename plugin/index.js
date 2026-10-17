@@ -16,7 +16,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { installImageGuard } from './image-guard.js'
-import { ensureInstalled, installHint } from './setup.js'
+import { ensureInstalled, installHint, assistInstall } from './setup.js'
 
 /**
  * 这里刻意不 import 任何外部包——不碰 `@deepseek-ai/dsh-tools`。
@@ -62,8 +62,31 @@ export const inject = ['tools']
 
 const SOCK = process.env.DSH_BRIDGE_SOCK || '/tmp/dsh-bridge.sock'
 const TOKEN_FILE = process.env.DSH_BRIDGE_TOKEN || '/tmp/dsh-bridge.token'
+
+/**
+ * 第一次发现宿主连不上时，做一次「引导」：把扩展目录塞进剪贴板、后台打开
+ * chrome://extensions（见 setup.js 的 assistInstall）。每个进程只做一次。
+ * 那一下点选替不了 —— Chrome 137+ 没有 --load-extension，商店也不收 debugger 权限 ——
+ * 但至少让用户不用自己去翻目录、找页面。
+ */
+let aided = false
+function firstAid() {
+  if (aided) return ''
+  aided = true
+  try {
+    if (fs.existsSync(SOCK)) return ''
+    const r = assistInstall()
+    const notes = []
+    if (r.opened) notes.push('我已经帮你把 chrome://extensions 打开（后台标签页）')
+    if (r.clipboard) notes.push('扩展文件夹的路径已经复制到剪贴板（文件框里 ⌘⇧G 再 ⌘V 回车就到）')
+    return notes.length ? `\n（${notes.join('；')}）` : ''
+  } catch {
+    return ''
+  }
+}
+
 /** 报错时带上「还差哪一步」——宿主和 native 注册已由 setup.js 自动装好。 */
-const HINT = () => installHint()
+const HINT = () => installHint() + firstAid()
 
 // ── 与宿主通话 ──────────────────────────────────────────────────────────────
 

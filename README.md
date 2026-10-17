@@ -75,11 +75,18 @@ Requirements: **macOS**, **Google Chrome 116+**, **Node.js 18+**.
 https://github.com/OrderG-X/dsh-chrome-bridge/releases/latest/download/dsh-chrome-bridge.tgz
 ```
 
-**2.** The plugin installs itself on first load (`~/.dsh/chrome-bridge`, `~/dsh-bridge-extension`, plus `com.dsh.bridge.json` in Chrome's `NativeMessagingHosts`). Loading the extension into Chrome is the one step it cannot do for you — Chrome 137+ removed `--load-extension`, and the Web Store does not accept the `debugger` permission. Do it once, ever:
+**2.** The plugin installs itself on first load (`~/.dsh/chrome-bridge`, `~/dsh-bridge-extension`, plus `com.dsh.bridge.json` in Chrome's `NativeMessagingHosts`). Loading the extension into Chrome is the one step nothing can do for you — Chrome 137+ removed `--load-extension`, and the Web Store does not accept the `debugger` permission. So the plugin walks you to that click instead:
+
+- the first time a `browser_*` tool finds nothing to talk to, it **opens `chrome://extensions` in a background tab** and **puts `~/dsh-bridge-extension` on your clipboard** (once per session; the error text repeats the steps);
+- in the file picker press **⌘⇧G**, then **⌘V**, then Enter — no folder hunting.
+
+Do it once, ever:
 
 1. open `chrome://extensions`
 2. enable **Developer mode** (top right)
-3. **Load unpacked** → pick `~/dsh-bridge-extension`
+3. **Load unpacked** → **⌘⇧G** → **⌘V** → Enter (the folder is already on your clipboard)
+
+From a source checkout, `./bridge setup` does exactly this in one command: installs the host, opens the page, copies the path, and waits until the extension connects — printing ✅ when it does.
 
 **3.** Verify (the `cb` CLI is installed along the way):
 

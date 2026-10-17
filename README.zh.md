@@ -75,11 +75,18 @@ DSH 的 agent（harness 自带，本仓库不提供）
 https://github.com/OrderG-X/dsh-chrome-bridge/releases/latest/download/dsh-chrome-bridge.tgz
 ```
 
-**2.** 插件首次加载会自己装好（`~/.dsh/chrome-bridge`、`~/dsh-bridge-extension`，以及 Chrome `NativeMessagingHosts` 里的 `com.dsh.bridge.json`）。只有「把扩展装进 Chrome」这一步它替不了你 —— Chrome 137+ 移除了 `--load-extension`，应用商店也不收 `debugger` 权限。一辈子做一次：
+**2.** 插件首次加载会自己装好（`~/.dsh/chrome-bridge`、`~/dsh-bridge-extension`，以及 Chrome `NativeMessagingHosts` 里的 `com.dsh.bridge.json`）。只有「把扩展装进 Chrome」这一步它替不了你 —— Chrome 137+ 移除了 `--load-extension`，应用商店也不收 `debugger` 权限。所以插件会把你送到那一下面前：
+
+- 第一次有 `browser_*` 工具发现没宿主可连时，它会**在后台标签页打开 `chrome://extensions`**，并**把 `~/dsh-bridge-extension` 复制进剪贴板**（每个会话只做一次；报错文字里也写着这几步）；
+- 文件框里按 **⌘⇧G** → **⌘V** → 回车 就选好了，不用在目录树里翻。
+
+一辈子做一次：
 
 1. 打开 `chrome://extensions`
 2. 右上角打开**开发者模式**
-3. **加载未打包的扩展程序** → 选 `~/dsh-bridge-extension`
+3. **加载未打包的扩展程序** → **⌘⇧G** → **⌘V** → 回车（路径已经在剪贴板里）
+
+用源码装的话，一条 `./bridge setup` 就把这套走完：装宿主、打开页面、复制路径，然后**等你点完自动检测**，连上会打 ✅。
 
 **3.** 验证（`cb` 命令行也顺带装好了）：
 

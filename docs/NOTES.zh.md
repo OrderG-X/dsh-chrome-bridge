@@ -411,3 +411,22 @@ DSH 本来有这套机制：适配器预检超预算 → 抛 `IMAGE_OFFLOAD_REQU
 - 会话文件里那些 `image/offload` 事件是**永久决策**：被卸下的图以后只发占位文本，
   模型再也看不到那几张老截图（这正是设计意图）。
 
+
+---
+
+# 2026-10-17 —— 装法收口：宿主随包 + 引导式手动
+
+- 宿主全收进 `plugin/vendor/`（MV3 扩展、native host、`cb`、页内光标脚本、技能），
+  插件首次加载由 `plugin/setup.js` 自动落盘并写注册文件 —— 不再需要 clone 仓库、
+  `./install.sh`、`python3`；`dsh plugin add <tarball>` 一个动作就够。
+- 商店路线暂缓：Chrome 137+ 无法脚本装扩展（`--load-extension` 实测已失效），
+  商店又要审 `debugger` 权限。于是把那「最后一次点选」做成**引导式手动**：
+  - 插件发现连不上宿主时（每进程一次）自动**后台打开 `chrome://extensions`** +
+    **把扩展目录塞进剪贴板**，报错文字给出 ⌘⇧G ⌘V 回车的走法；
+  - `./bridge setup` 是同一套的命令行版，装完会**轮询 socket**，扩展连上自动打 ✅。
+- 顺手修了两个实测出来的 bug（v1.2.1）：
+  1. `__dsh_point` 只有两次 `requestAnimationFrame` —— Chrome 在**后台标签页会暂停 rAF**，
+     Promise 永不 resolve → `click-el`/`click-text` 死锁（45 秒超时且不回话）。加了 120ms 定时器兜底。
+  2. 页内光标用 `sr.innerHTML` 注入 —— Gmail 这类**开了 Trusted Types** 的站点直接抛
+     `This document requires 'TrustedHTML' assignment`，连带整个点击作废。改成 DOM API +
+     `<style>.textContent`。

@@ -21,6 +21,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 export const HOST_NAME = 'com.dsh.bridge'
@@ -179,17 +180,46 @@ export function ensureInstalled(options = {}) {
 }
 
 /**
- * 出错时给模型/用户看的话。宿主和注册已经自动装好了，所以只剩 Chrome 那一下。
+ * 出错时给模型/用户看的话。宿主和注册已经自动装好了，所以只剩 Chrome 那一下 ——
+ * 那一下谁都替不了（Chrome 137+ 移除了 --load-extension，商店也不收 debugger 权限），
+ * 那就把它铺到用户手边：路径给全、⌘⇧G 粘贴的走法写清楚。
  */
 export function installHint(home = os.homedir()) {
   const s = installState(home)
-  const step = [
+  if (!s.vendor) return '插件包里没有自带宿主：请重新用 release tarball 安装本插件（README 的 Install 一节）。'
+  return [
     '浏览器桥还差最后一步（一次性）：',
     '1. Chrome 打开 chrome://extensions',
     '2. 右上角打开「开发者模式」',
-    `3. 点「加载已解压的扩展程序」，选这个文件夹：${s.extDir}`,
+    '3. 点「加载已解压的扩展程序」，在文件框里按 ⌘⇧G、粘贴、回车，选这个文件夹：',
+    `   ${s.extDir}`,
     '装好后回到这里重试；宿主和 native 注册已经自动装好了，不用再跑任何脚本。',
   ].join('\n')
-  if (!s.vendor) return '插件包里没有自带宿主：请重新用 release tarball 安装本插件（README 的 Install 一节）。'
-  return step
+}
+
+/** Chrome 在不在跑（决定要不要顺手把设置页打开）。 */
+function chromeRunning() {
+  try { execFileSync('/usr/bin/pgrep', ['-x', 'Google Chrome'], { stdio: 'ignore' }); return true } catch { return false }
+}
+
+/**
+ * 引导式安装：那一下点选替不了，但可以把用户送到那一下面前 ——
+ *   · 扩展目录塞进剪贴板：文件框里 ⌘⇧G ⌘V 回车就到，不用手点目录树
+ *   · Chrome 在跑的话，顺手把 chrome://extensions 用后台标签页打开（不抢前台）
+ * 只在「宿主连不上」时调用，且每个进程只做一次（见 index.js 的 firstAid）。
+ */
+export function assistInstall(home = os.homedir()) {
+  const p = paths(home)
+  const out = { clipboard: false, opened: false, chromeRunning: chromeRunning() }
+  try {
+    execFileSync('/usr/bin/pbcopy', [], { input: `${p.extDir}\n` })
+    out.clipboard = true
+  } catch {}
+  if (out.chromeRunning) {
+    try {
+      execFileSync('/usr/bin/open', ['-g', '-a', 'Google Chrome', 'chrome://extensions'])
+      out.opened = true
+    } catch {}
+  }
+  return out
 }
