@@ -10,7 +10,7 @@ Everything below is meant to be copy-pasted as-is. `<…>` marks the few values 
 DSH Bridge
 ```
 
-**Summary** (132 chars max — the line below is 131)
+**Summary** (132 chars max — the line below is 131). The dashboard shows this as "Summary from package": `./bridge store-pack` writes it into the zip's manifest `description`, so there is nothing to paste.
 
 ```
 Drive the Chrome you already use from a local DSH agent: real clicks and typing over native messaging. No ports, no Connect button.
@@ -26,7 +26,8 @@ Nothing opens a port and nothing asks you to press Connect: the extension talks 
 What you get:
 • Real input — clicks, typing, keys, scrolling, drags and file pickers are dispatched as trusted CDP events, not synthetic DOM hacks.
 • Real screenshots — the agent sees the rendered page, including full-page and single-element captures.
-• A visible cursor — every action draws an on-page cursor that also shows up in screenshots, so you can watch what the agent is doing.
+• A visible cursor — every action draws an on-page cursor (with a small label saying what it is about to do) that also shows up in screenshots, so you can watch what the agent is doing.
+• A control panel — the toolbar popup shows the connection status, which tabs each agent session is holding, a live log of recent actions, a switch to pause all control, and a one-click "Release all".
 • Your session — you stay logged in; there is no separate automated browser and no cookie export.
 • A permanent "DSH Bridge is debugging this browser" banner while attached — press Cancel on it and the bridge detaches instantly.
 
@@ -118,6 +119,25 @@ The content script only patches automation-detection fingerprints (navigator.web
 **Remote code** — answer **No** (all code ships in the package; nothing is fetched or eval'd).
 
 **Data usage** — the extension itself collects and transmits nothing; it reads page content locally and hands it to the locally running agent the user installed. Tick the data types the extension *accesses* (website content, browsing activity) and answer "no" to selling/transferring for unrelated purposes; the privacy policy above states exactly that.
+
+## Test instructions tab (for the reviewer)
+
+```
+This extension is the browser half of a local tool. It only talks to a native-messaging helper on the same Mac, so on its own its toolbar panel shows "helper not connected" - that is expected. No account or login is needed.
+
+To test on macOS (needs Node.js 18+ and git):
+1. Install this extension from the store.
+2. In Terminal:
+   git clone https://github.com/OrderG-X/dsh-chrome-bridge
+   cd dsh-chrome-bridge && ./install.sh
+   (installs the helper and registers it for this extension's ID; ./install.sh --uninstall removes it)
+3. Open the extension's toolbar panel: the status turns green ("已连接" = connected); if not, press its reconnect button or restart Chrome.
+4. In Terminal, drive the browser the way the local agent does:
+   ~/.dsh/bin/cb tabs
+   ~/.dsh/bin/cb open https://example.com --front
+   ~/.dsh/bin/cb click-text active "Learn more"
+   You will see the on-page cursor move and click, the tab placed in a labelled tab group, and Chrome's debugging banner. The panel lists the controlled tab and the recent actions; "全部松手" (Release all) detaches everything.
+```
 
 ## After the item is created
 

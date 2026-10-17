@@ -1,6 +1,6 @@
-# 上架 Chrome 应用商店 —— 照着点就行（2026-10-17）
+# 上架 Chrome 应用商店 —— 照着点就行（2026-10-18 更新）
 
-> **状态：暂缓上架**（2026-10-17 决定）。材料全部留在这里，等要上时照下面走即可 ——
+> **状态：已建条目，提交审核中**（2026-10-18，扩展 v1.10.0）。商店 item ID `bippcbbbipppmhjkjomgdnjbooecbimo`，已写进 `STORE_EXT_IDS` 和 `install.sh`。
 > 包用 `./bridge store-pack` 重新生成（拿到商店的 item ID 后，填进 `plugin/setup.js` 的 `STORE_EXT_IDS` 再发一版插件）。
 > 没上架期间，安装走「引导式手动」：插件会用后台标签页打开 `chrome://extensions` 并把扩展目录放进剪贴板，用户 ⌘⇧G ⌘V 回车即可；`./bridge setup` 是同一套的命令行版。
 
@@ -10,7 +10,7 @@
 |---|---|
 | 要上传的包 | `dist/dsh-bridge-store.zip`（重新生成：`./bridge store-pack`） |
 | 所有要填的文案 | [store/listing.md](listing.md)（一段一段复制粘贴） |
-| 截图 | `store/screenshots/1-real-chrome.png`、`2-nine-tools.png`（都 1280×800） |
+| 截图 | `store/screenshots/1-real-chrome.png`、`2-eleven-tools.png`、`3-panel.png`（都 1280×800） |
 | 小宣传图 | `store/screenshots/promo-440x280.png` |
 | 隐私政策网址 | https://github.com/OrderG-X/dsh-chrome-bridge/blob/main/PRIVACY.md |
 
@@ -19,8 +19,9 @@
 1. 打开 <https://chrome.google.com/webstore/devconsole>，用你的 Google 账号登录，交**一次性 $5** 开发者注册费（要信用卡）。
 2. 点右上 **Add new item** → 选 `dist/dsh-bridge-store.zip` → 上传。
 3. 左边 **Store listing**：把 `listing.md` 里的内容一格一格粘进去（名字、Summary、Description、分类选 **Developer Tools**、语言 English、Homepage / Support / Privacy policy 三个 URL）。
-4. 同一页往下：**截图**传那两张 1280×800，**Small promo tile** 传 440×280。
-5. 左边 **Privacy practices**：`listing.md` 里 "Privacy practices tab" 那一段，每个权限框粘对应的一句；**Remote code 选 No**；数据用途按那一段的说明勾。
+4. 同一页往下：**截图**按 1、2、3 的顺序传那三张 1280×800，**Small promo tile** 传 440×280。
+5. 左边 **Privacy practices**（隐私权）：`listing.md` 里 "Privacy practices tab" 那一段，每个权限框粘对应的一句；**Remote code 选 No**；数据用途按那一段的说明勾。
+5b. 左边 **测试说明**：粘 `listing.md` 里 "Test instructions tab" 那段（告诉审核员怎么装宿主来测）。
 6. 左边 **Distribution**：可见性建议选 **Unlisted**（不公开搜索到，只有拿到链接的人能装；想公开也行）；地区全选。
 7. 右上 **Submit for review**，等 **1～3 天**（`debugger` 权限会审得慢一点）。
 

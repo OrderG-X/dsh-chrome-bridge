@@ -7,6 +7,7 @@
 # What it does:
 #   1. copies the extension + native host into ~/.dsh/chrome-bridge/ (repo can move afterwards)
 #   2. registers the native messaging host with Chrome, bound to the extension's fixed ID
+#      (plus the Chrome Web Store build's ID)
 #   3. installs the `cb` CLI, the `dsh-chrome-bridge` manager, and the DSH skill
 #
 # 平时用不着跑它：DSH 插件的 setup.js 在首次加载时会自动做 1~3 步（宿主 + 注册文件），
@@ -71,6 +72,11 @@ console.log([...hex].map(c=>String.fromCharCode(97+parseInt(c,16))).join(""));
 echo "    $EXT_ID"
 
 echo "==> 3/6 register native messaging host"
+# 本地「加载已解压」的固定 ID + 商店版 ID（列表在 plugin/setup.js 的 STORE_EXT_IDS，两边共用一份）
+ORIGINS="$("$NODE_BIN" -e '
+import(process.argv[1]).then((m) => console.log(JSON.stringify(
+  [process.argv[2], ...m.STORE_EXT_IDS].map((id) => `chrome-extension://${id}/`))))
+' "$REPO/plugin/setup.js" "$EXT_ID")"
 mkdir -p "$NM_DIR"
 cat > "$NM_FILE" <<JSON
 {
@@ -78,7 +84,7 @@ cat > "$NM_FILE" <<JSON
   "description": "dsh-chrome-bridge native host (local browser control)",
   "path": "$BRIDGE/host/run.sh",
   "type": "stdio",
-  "allowed_origins": ["chrome-extension://$EXT_ID/"]
+  "allowed_origins": $ORIGINS
 }
 JSON
 echo "    $NM_FILE"

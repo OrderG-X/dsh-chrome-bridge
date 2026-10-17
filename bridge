@@ -169,12 +169,16 @@ print(ok[0]['id'] if ok else '')")
     TMP="$(mktemp -d)"
     trap 'rm -rf "$TMP"' EXIT
     cp -R "$VENDOR/extension/." "$TMP/"
+    # 商店后台的 Summary 直接取包里 manifest 的 description（只读、≤132 字），换成 listing.md 里那句英文
     node -e '
-      const fs = require("fs"), p = process.argv[1];
+      const fs = require("fs"), [p, listing] = process.argv.slice(1);
       const m = JSON.parse(fs.readFileSync(p, "utf8"));
       delete m.key;
+      const sum = /\*\*Summary\*\*[^\n]*\n+```\n([^\n]+)\n```/.exec(fs.readFileSync(listing, "utf8"));
+      if (!sum || sum[1].length > 132) { console.error("listing.md 里找不到 Summary，或超过 132 字"); process.exit(1) }
+      m.description = sum[1];
       fs.writeFileSync(p, JSON.stringify(m, null, 2) + "\n");
-    ' "$TMP/manifest.json"
+    ' "$TMP/manifest.json" "$REPO/store/listing.md" || exit 1
     mkdir -p "$REPO/dist"
     rm -f "$OUT"
     ( cd "$TMP" && zip -qr "$OUT" . -x '.*' )

@@ -32,7 +32,7 @@ export const EXT_DIR_NAME = 'dsh-bridge-extension'
  * 上架后把 32 位 item ID 填进来，注册文件的 allowed_origins 就会同时放行两个版本。
  */
 export const STORE_EXT_IDS = [
-  // 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+  'bippcbbbipppmhjkjomgdnjbooecbimo', // 2026-10-18 建的商店条目
 ]
 
 /** 插件包里的自带目录（vendor/ 跟着 tgz 一起发）。 */
