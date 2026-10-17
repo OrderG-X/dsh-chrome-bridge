@@ -75,16 +75,21 @@ function connect() {
     const err = chrome.runtime.lastError
     if (err) log('原生宿主断开:', err.message)
     port = null
+    hostInfo = null
     for (const id of [...attached]) {
       chrome.debugger.detach({ tabId: id }).catch(() => {})
     }
     attached.clear()
+    updateBadge()
     setTimeout(connect, RECONNECT_MS)
   })
 
   log('已连上原生宿主')
   // 主动报到：宿主靠它判断扩展是否在线（否则宿主刚起来时会误判"扩展未连接"）
   post({ hello: true, version: chrome.runtime.getManifest().version })
+  post({ hostPing: true })
+  // connectNative 本身总是「成功」，宿主起不来要等 onDisconnect —— 稳住一会儿再把角标的 ! 收掉
+  setTimeout(() => { if (port) updateBadge() }, 1500)
 }
 
 function post(msg) {
@@ -125,16 +130,135 @@ function friendly(e) {
 }
 
 async function handle(msg) {
-  if (!msg || !msg.op) return
-  const { id, op, args = {} } = msg
+  if (!msg) return
+  if (msg.hostPong) { hostInfo = { ...msg, at: Date.now() }; return }
+  if (!msg.op) return
+  const { id, op, args = {}, client } = msg
+  const t0 = Date.now()
   try {
     const fn = OPS[op]
     if (!fn) throw new Error(`未知操作: ${op}`)
+    if (paused && !PAUSE_ALLOWED.has(op) && !(await isOwnPage(op, args))) {
+      throw new Error('用户在 DSH Bridge 弹窗里暂停了浏览器控制——请用户点开扩展图标、打开「允许 DSH 控制」后再试')
+    }
     const result = await fn(args)
     post({ id, ok: true, result })
+    track(client, op, args, result, null, Date.now() - t0)
   } catch (e) {
-    post({ id, ok: false, error: friendly(e).message })
+    const err = friendly(e).message
+    post({ id, ok: false, error: err })
+    track(client, op, args, null, err, Date.now() - t0)
   }
+}
+
+// ── 弹窗用的账本：哪些会话在用、动了哪些标签页、最近做了什么 ────────────────
+// 全在内存里：service worker 有原生端口连着，平时不会被挂起；真重启了就从零记，不要紧。
+
+/** 宿主自报的状态（pid、socket 是否在听、最近一次被调用） */
+let hostInfo = null
+/** 用户在弹窗里按了暂停：除了这几个，其它操作一律拒绝 */
+let paused = false
+const PAUSE_ALLOWED = new Set(['version', 'reload', 'ping', 'logs', 'detach'])
+
+/** 暂停只管网页；扩展自己的页面（弹窗）不算，不然连「解除暂停」的自动化测试都进不去 */
+async function isOwnPage(op, args) {
+  const self = `chrome-extension://${chrome.runtime.id}/`
+  if (op === 'open') return String(args.url || '').startsWith(self)
+  if (args.tabId == null) return false
+  try {
+    return ((await chrome.tabs.get(Number(args.tabId))).url || '').startsWith(self)
+  } catch {
+    return false
+  }
+}
+/** 用户在弹窗里关了「页面里显示光标」：真实点击照做，只是不画那只蓝色光标 */
+let showCursor = true
+chrome.storage.local.get(['paused', 'showCursor']).then((v) => {
+  paused = !!(v && v.paused)
+  showCursor = !(v && v.showCursor === false)
+  updateBadge()
+}).catch(() => {})
+
+/** 受控标签页里，扩展自己的页面（弹窗被当成网页打开时）不算数 */
+const controlledCount = () => [...attached].filter((id) => !ownTabs.has(id)).length
+
+/** 不算「动作」的内部操作（版本检查、焦点模拟、光标跟随……） */
+const QUIET_OPS = new Set(['version', 'reload', 'ping', 'logs'])
+const QUIET_CDP = new Set(['Emulation.setFocusEmulationEnabled', 'Page.getNavigationHistory'])
+
+/** 会话 key → { key, kind, session, pid, first, last, ops, errors, tabs:Set } */
+const SESSIONS = new Map()
+/** 最近动作：DSH 的一次工具调用算一条（同一个 callId 的多个 op 合并），cb 命令行一个 op 一条 */
+const ACTIVITY = []
+const ACTIVITY_MAX = 80
+
+function clientKey(c) {
+  if (!c) return 'cli'
+  const kind = c.kind || 'dsh'
+  return c.session ? `${kind}:${c.session}` : `${kind}:pid${c.pid || '?'}`
+}
+
+/** 通过 open 打开的扩展自己的页面（弹窗页）：对它们的操作不记账 */
+const ownTabs = new Set()
+
+function track(client, op, args, result, error, ms) {
+  if (QUIET_OPS.has(op)) return
+  if (op === 'open' && String(args.url || '').startsWith(`chrome-extension://${chrome.runtime.id}/`)) {
+    if (result && result.tabId != null) ownTabs.add(Number(result.tabId))
+    return
+  }
+  if (args.tabId != null && ownTabs.has(Number(args.tabId))) return
+  // CDP 的原始报错是一段 JSON（{"code":-32000,"message":"…"}），弹窗里只留 message
+  if (error && error.trim().startsWith('{')) {
+    try { error = JSON.parse(error).message || error } catch {}
+  }
+  if (op === 'cdp' && QUIET_CDP.has(args.method)) return
+  const now = Date.now()
+  const key = clientKey(client)
+  let s = SESSIONS.get(key)
+  if (!s) {
+    s = { key, kind: client ? client.kind || 'dsh' : 'cli', session: (client && client.session) || null,
+      pid: (client && client.pid) || null, first: now, last: 0, ops: 0, errors: 0, tabs: new Set() }
+    SESSIONS.set(key, s)
+  }
+  s.last = now
+  s.ops++
+  if (error) s.errors++
+  const tabId = args.tabId != null ? Number(args.tabId) : result && result.tabId != null ? Number(result.tabId) : null
+  if (tabId != null) {
+    if (op === 'close') s.tabs.delete(tabId)
+    else s.tabs.add(tabId)
+  }
+
+  const call = client && client.call
+  const prev = call ? ACTIVITY.find((a) => a.call === call) : null
+  if (prev) {
+    prev.last = now
+    prev.ops++
+    prev.ms += ms
+    if (tabId != null && prev.tabId == null) prev.tabId = tabId
+    if (error) { prev.ok = false; prev.error = error }
+    return
+  }
+  ACTIVITY.push({
+    at: now, last: now, key, call: call || null, tool: (client && client.tool) || null,
+    hint: (client && client.hint) || '', op: op === 'cdp' ? `cdp:${args.method}` : op,
+    tabId, ok: !error, error: error || undefined, ms, ops: 1,
+  })
+  if (ACTIVITY.length > ACTIVITY_MAX) ACTIVITY.shift()
+}
+
+/** 工具栏图标角标：受控标签页数；暂停 ⏸；宿主断了 ! */
+function updateBadge() {
+  try {
+    const n = controlledCount()
+    let text = n ? String(n) : ''
+    let color = '#4D6BFE'
+    if (paused) { text = '⏸'; color = '#B7791F' } else if (!port) { text = '!'; color = '#E5484D' }
+    chrome.action.setBadgeText({ text })
+    chrome.action.setBadgeBackgroundColor({ color })
+    if (chrome.action.setBadgeTextColor) chrome.action.setBadgeTextColor({ color: '#FFFFFF' })
+  } catch {}
 }
 
 // ── CDP 基础设施 ────────────────────────────────────────────────────────────
@@ -164,7 +288,7 @@ async function detachIdle() {
 const GROUP_TITLE = 'DSH agent 正在操作'
 const CURSOR_ICON = { 16: 'icons/cursor16.png', 32: 'icons/cursor32.png', 48: 'icons/cursor48.png' }
 // 标签页上的小鼠标：把页面 favicon 临时换成它（data URL，绕开页面 CSP 与 web_accessible_resources）
-const CURSOR_FAVICON = 'data:image/png;base64,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'
+const CURSOR_FAVICON = 'data:image/png;base64,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'
 const IDLE_ICON = { 16: 'icons/icon16.png', 32: 'icons/icon32.png', 48: 'icons/icon48.png' }
 const groupedTabs = new Map() // tabId -> groupId（只记我们自己建的组）
 const ourGroup = new Map()     // windowId -> groupId（标签组是 per-window 的）
@@ -177,9 +301,30 @@ async function setTabFavicon(tabId, on) {
       target: { tabId: Number(tabId) },
       func: (on, href) => {
         const ID = 'dsh-bridge-cursor-favicon'
+        const OFF = 'data-dsh-bridge-rel'
         const old = document.getElementById(ID)
-        if (!on) { if (old) old.remove(); return }
+        if (!on) {
+          // 把页面自己的图标 link 换回来（rel 改回去 Chrome 就会重算）；
+          // 页面一个都没写、靠默认 /favicon.ico 的，光删掉我们的 Chrome 不换回去 —— 补一个指向默认图标的
+          const parked = [...document.querySelectorAll(`link[${OFF}]`)]
+          if (!old && !parked.length) return
+          if (old) old.remove()
+          for (const l of parked) { l.rel = l.getAttribute(OFF); l.removeAttribute(OFF) }
+          if (!parked.length && !document.querySelector('link[rel~="icon"]')) {
+            const d = document.createElement('link')
+            d.rel = 'icon'
+            d.href = '/favicon.ico'
+            d.setAttribute('data-dsh-bridge', 'restore')
+            document.head.appendChild(d)
+          }
+          return
+        }
         if (old) return
+        // 页面自己有图标的话 Chrome 会优先用它，我们的小鼠标挂不上去 —— 先把它们的 rel 停掉，松手时原样恢复
+        for (const l of document.querySelectorAll('link[rel~="icon"]')) {
+          l.setAttribute(OFF, l.rel)
+          l.rel = 'dsh-bridge-parked-icon'
+        }
         const l = document.createElement('link')
         l.id = ID
         l.rel = 'icon'
@@ -195,6 +340,7 @@ async function setTabFavicon(tabId, on) {
 async function markTab(tabId) {
   const id = Number(tabId)
   tabEpoch.set(id, (tabEpoch.get(id) || 0) + 1)
+  updateBadge()
   // 分组 = "这个标签页正在被操作"；标签上的小鼠标只跟页内光标走（markCursor）
   await ensureGroup(id)
 }
@@ -237,7 +383,9 @@ async function ensureGroup(tabId) {
 async function unmarkTab(tabId) {
   const id = Number(tabId)
   const epoch = tabEpoch.get(id) || 0      // 竞态守卫：await 期间如果有新的 mark，就放弃这次 unmark
+  updateBadge()
   cursorReady.delete(id)      // 必修：不清的话，松手后小鼠标灭了就再也不亮（页面里的光标其实还在）
+  cursorPos.delete(id)        // 松手后再接手，光标从新目标处冒出来，不从老地方飞
   await hidePageCursor(id)    // 尽力把页内光标收掉（松手不留痕）
   await markCursor(id, false)
   if ((tabEpoch.get(id) || 0) !== epoch) return   // 期间又被 mark 了，别拆
@@ -287,9 +435,12 @@ async function ensure(tabId) {
       if (!String(e && e.message || e).includes('Already attached')) throw e
     }
     attached.add(Number(tabId))
-    for (const d of ['Page', 'DOM', 'Runtime', 'Network']) {
+    // Runtime.enable 会把接上之前的 console 和 JS 报错补发一遍（V8 自己存着），Log.enable 同理补发浏览器日志
+    for (const d of ['Page', 'DOM', 'Runtime', 'Network', 'Log']) {
       try { await chrome.debugger.sendCommand({ tabId: Number(tabId) }, d + '.enable', {}) } catch {}
     }
+    // 后台标签页 / 被挡住的窗口里页面是 hidden，不开焦点模拟的话 CDP 鼠标键盘事件会被直接丢掉
+    try { await chrome.debugger.sendCommand({ tabId: Number(tabId) }, 'Emulation.setFocusEmulationEnabled', { enabled: true }) } catch {}
     await markTab(tabId)
   }
   return Number(tabId)
@@ -365,7 +516,7 @@ chrome.debugger.onEvent.addListener((src, method, params) => {
       netPending.delete(oldest)
     }
     netPending.set(params.requestId, {
-      tabId: src.tabId, method: params.request.method, url: params.request.url,
+      id: params.requestId, tabId: src.tabId, method: params.request.method, url: params.request.url,
       type: params.type, at: Date.now(),
     })
   }
@@ -384,13 +535,86 @@ chrome.debugger.onEvent.addListener((src, method, params) => {
     }
   }
   if (method === 'Runtime.consoleAPICalled') {
-    const text = (params.args || []).map(a =>
-      a.value !== undefined ? String(a.value) : (a.description || a.type)
-    ).join(' ')
-    CONSOLE.push({ tabId: src.tabId, level: params.type, text, at: Date.now() })
-    if (CONSOLE.length > 300) CONSOLE.shift()
+    const args = params.args || []
+    const f = params.stackTrace && params.stackTrace.callFrames && params.stackTrace.callFrames[0]
+    const item = { tabId: src.tabId, level: params.type, kind: 'console', text: args.map(fmtArg).join(' '),
+      at: params.timestamp, where: f && f.url ? `${f.url}:${f.lineNumber + 1}` : '' }
+    // 调试器接上前打的旧消息是 V8 补发的，补发不带对象预览（只剩 "Object"）——回页面里展开一下
+    if (pushConsole(item) && args.some(needsExpand)) {
+      expandArgs(src.tabId, args).then((t) => { item.text = t.slice(0, 2000) }).catch(() => {})
+    }
+  }
+  if (method === 'Runtime.exceptionThrown') {
+    // 没被 catch 的 JS 报错 —— 调试网页时最要紧的一类，console API 那条路收不到
+    const d = params.exceptionDetails || {}
+    pushConsole({ tabId: src.tabId, level: 'error', kind: 'exception',
+      text: (d.exception && (d.exception.description || d.exception.value)) || d.text || 'Uncaught',
+      at: params.timestamp, where: d.url ? `${d.url}:${(d.lineNumber || 0) + 1}` : '' })
+  }
+  if (method === 'Log.entryAdded') {
+    // 浏览器自己报的：请求失败、CSP 拦截、废弃 API 警告……
+    const e = params.entry || {}
+    if (e.level !== 'verbose') {
+      pushConsole({ tabId: src.tabId, level: e.level, kind: e.source || 'browser', text: e.text || '',
+        at: e.timestamp, where: e.url || '' })
+    }
   }
 })
+
+/** console 参数 → 一段字。对象/数组用 V8 带的预览拼成 {a: 1, b: "x"}，不然只看得到 "Object"。 */
+function fmtArg(a) {
+  if (a.value !== undefined) return typeof a.value === 'string' ? a.value : JSON.stringify(a.value)
+  if (a.unserializableValue) return a.unserializableValue
+  const p = a.preview
+  if (p && p.properties && (p.subtype === 'array' || (p.type === 'object' && !p.subtype))) {
+    const val = (x) => (x.type === 'string' ? JSON.stringify(x.value) : x.value ?? x.type)
+    const more = p.overflow ? ', …' : ''
+    return p.subtype === 'array'
+      ? `[${p.properties.map(val).join(', ')}${more}]`
+      : `{${p.properties.map((x) => `${x.name}: ${val(x)}`).join(', ')}${more}}`
+  }
+  return a.description || a.type
+}
+
+const needsExpand = (a) => a.objectId && !a.preview && a.type === 'object' && (!a.subtype || a.subtype === 'array')
+
+/** 页内把对象拼成和预览一样的样子：{a: 1, b: "x"} / [1, 2] */
+const EXPAND_FN = `function () {
+  const v = (x) => typeof x === 'string' ? JSON.stringify(x) : x === null ? 'null'
+    : Array.isArray(x) ? 'Array(' + x.length + ')'
+    : typeof x === 'object' ? ((x.constructor && x.constructor.name) || 'Object')
+    : typeof x === 'function' ? 'ƒ' : String(x);
+  if (Array.isArray(this)) return '[' + this.slice(0, 20).map(v).join(', ') + (this.length > 20 ? ', …' : '') + ']';
+  const ks = Object.keys(this);
+  return '{' + ks.slice(0, 20).map((k) => k + ': ' + v(this[k])).join(', ') + (ks.length > 20 ? ', …' : '') + '}';
+}`
+
+async function expandArgs(tabId, args) {
+  const parts = []
+  for (const a of args) {
+    if (!needsExpand(a)) { parts.push(fmtArg(a)); continue }
+    try {
+      const r = await chrome.debugger.sendCommand({ tabId }, 'Runtime.callFunctionOn',
+        { objectId: a.objectId, functionDeclaration: EXPAND_FN, returnByValue: true, silent: true })
+      parts.push(r && r.result && typeof r.result.value === 'string' ? r.result.value : fmtArg(a))
+    } catch {
+      parts.push(fmtArg(a))
+    }
+  }
+  return parts.join(' ')
+}
+
+/** 重新 attach 时 V8 会把旧消息补发一遍 —— 按「标签页 + 时间 + 内容」去重。 */
+function pushConsole(item) {
+  item.text = String(item.text || '').slice(0, 2000)
+  item.at = Math.round(Number(item.at) || Date.now())
+  item.key = item.text   // 去重按原始文字比：text 之后可能被 expandArgs 改写
+  const dup = CONSOLE.some(c => c.tabId === item.tabId && c.at === item.at && c.key === item.key)
+  if (dup) return false
+  CONSOLE.push(item)
+  if (CONSOLE.length > 300) CONSOLE.shift()
+  return true
+}
 
 /** 注入表达式并取值（有异常就抛，别把 undefined 当成功） */
 async function evaluate(tabId, expression) {
@@ -428,7 +652,9 @@ const __dsh_point = (el) => {
       const r = el.getBoundingClientRect();
       res({ x: r.left + r.width / 2, y: r.top + r.height / 2,
             tag: el.tagName.toLowerCase(),
-            text: __dsh_norm(el.innerText || el.value || el.getAttribute('aria-label') || '').slice(0, 80) });
+            // 输入框没 innerText，退到 aria-label / placeholder；密码框的 value 绝不拿出来（会上名牌、进工具结果）
+            text: __dsh_norm(el.innerText || (el.type === 'password' ? '' : el.value) || el.getAttribute('aria-label') ||
+              el.getAttribute('placeholder') || el.getAttribute('title') || el.getAttribute('alt') || '').slice(0, 80) });
     };
     // 后台标签页里 Chrome 会暂停 requestAnimationFrame —— 只等 rAF 的话这个 Promise
     // 永远不 resolve，整个 click-el / click-text 就卡死（45 秒超时、还不回话）。
@@ -445,19 +671,66 @@ async function pointOf(tabId, finderJs) {
   return pt
 }
 
-/** 页内光标：注入过一次就记住，导航后失效要重注 */
+/** 页内光标：注入过一次就记住，导航后失效要重注；位置按标签页记着，换了页面从原处接着出现 */
 const cursorReady = new Set()
+const cursorPos = new Map()
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 async function injectCursor(tabId, script) {
-  if (!script) return false
-  if (!cursorReady.has(Number(tabId))) {
+  if (!script || !showCursor) return false
+  const id = Number(tabId)
+  if (!cursorReady.has(id)) {
     await evaluate(tabId, script)
-    cursorReady.add(Number(tabId))
+    const p = cursorPos.get(id)
+    if (p) await evaluate(tabId, `window.__dshCursor.pos() || window.__dshCursor.place(${p.x}, ${p.y})`).catch(() => {})
+    cursorReady.add(id)
     // 语义：标签页上出现小鼠标 = 这个页面里真的有一只鼠标（页内光标已就位）
     await markCursor(tabId, true)
   }
   return true
 }
+
+/**
+ * 调页内光标。cursorReady 可能已经过期（页面刚跳走、loadEventFired 还没到；或者页面里还是旧版光标），
+ * 所以表达式里先探一下 v3 光标在不在，不在就重注一次再来。光标装不上返回 undefined。
+ */
+async function cursorDo(tabId, script, expr) {
+  const id = Number(tabId)
+  const NONE = '__dsh_no_cursor__'
+  const probe = `((window.__dshCursor && window.__dshCursor.version >= 3) ? (${expr}) : ${JSON.stringify(NONE)})`
+  if (!cursorReady.has(id) && !(await injectCursor(tabId, script))) return undefined
+  let r = await evaluate(tabId, probe)
+  if (r === NONE) {
+    cursorReady.delete(id)
+    if (!(await injectCursor(tabId, script))) return undefined
+    r = await evaluate(tabId, probe)
+  }
+  return r === NONE ? undefined : r
+}
+
+/** 光标滑到 (x, y)，可顺带亮出名牌文字。返回滑行时长 ms；光标装不上返回 null（不影响真实操作）。 */
+async function cursorMove(tabId, script, x, y, opts = {}) {
+  const px = Math.round(Number(x))
+  const py = Math.round(Number(y))
+  const mo = { straight: !!opts.straight }
+  if (opts.duration != null) mo.duration = Math.max(0, Math.round(Number(opts.duration)))
+  const say = opts.label ? `c.label(${JSON.stringify(String(opts.label).slice(0, 80))});` : ''
+  try {
+    const d = await cursorDo(tabId, script, `(() => { const c = window.__dshCursor; ${say} return c.move(${px}, ${py}, ${JSON.stringify(mo)}) })()`)
+    if (d === undefined) return null
+    cursorPos.set(Number(tabId), { x: px, y: py })
+    return Number(d) || 0
+  } catch { return null }
+}
+
+/** 光标的其它表情（click / down / up / label / scroll）：只在光标已经在页面里时做，出错不管 */
+async function cursorFx(tabId, expr) {
+  if (!cursorReady.has(Number(tabId))) return undefined
+  try { return await cursorDo(tabId, '', expr) } catch { return undefined }
+}
+
+/** 等光标飞到位：人眼先看到"要点这儿"，再发真实事件 */
+const settle = (d) => sleep(Math.min(700, Math.max(120, d || 0)) + 40)
 
 /** 用 scripting 在 MAIN world 收掉页内光标（不依赖 CDP，调试器已断开时也能收）。 */
 async function hidePageCursor(tabId) {
@@ -480,23 +753,6 @@ async function markCursor(tabId, on) {
   await setTabFavicon(id, on)
 }
 
-async function paintCursor(tabId, script, x, y, text) {
-  if (!(await injectCursor(tabId, script))) return false
-  try {
-    await evaluate(tabId, `window.__dshCursor.move(${Math.round(x)}, ${Math.round(y)})`)
-    if (text) await evaluate(tabId, `window.__dshCursor.label(${JSON.stringify(text)})`)
-  } catch {}
-  return true
-}
-
-async function flashCursor(tabId, x, y) {
-  if (!cursorReady.has(Number(tabId))) return
-  try {
-    await evaluate(tabId, 'window.__dshCursor.press()')
-    await evaluate(tabId, `window.__dshCursor.click(${Math.round(x)}, ${Math.round(y)})`)
-  } catch {}
-}
-
 async function clickPoint(tabId, x, y, opts = {}) {
   const n = Number(opts.clickCount || 1)
   const button = opts.button || 'left'
@@ -504,9 +760,11 @@ async function clickPoint(tabId, x, y, opts = {}) {
 
   // 先让光标飞过去，人眼看得见，再发真实点击
   if (opts.cursor && opts.cursor.script) {
-    await paintCursor(tabId, opts.cursor.script, base.x, base.y, opts.cursor.label)
-    await new Promise(r => setTimeout(r, 300))
-    await flashCursor(tabId, base.x, base.y)
+    const d = await cursorMove(tabId, opts.cursor.script, base.x, base.y, { label: opts.cursor.label })
+    if (d !== null) {
+      await settle(d)
+      await cursorFx(tabId, `(window.__dshCursor.click(${base.x}, ${base.y}, ${n}), 1)`)
+    }
   }
 
   await send(tabId, 'Input.dispatchMouseEvent', { ...base, type: 'mouseMoved', buttons: 0 })
@@ -582,7 +840,13 @@ const OPS = {
     return { lines: LOG.slice(-limit) }
   },
 
-  async console({ limit = 40, tabId } = {}) {
+  async console({ limit = 40, tabId, clear = false } = {}) {
+    if (clear) {
+      for (let i = CONSOLE.length - 1; i >= 0; i--) {
+        if (tabId == null || CONSOLE[i].tabId === Number(tabId)) CONSOLE.splice(i, 1)
+      }
+      return { cleared: true }
+    }
     const items = tabId != null ? CONSOLE.filter(c => c.tabId === Number(tabId)) : CONSOLE
     return { items: items.slice(-limit) }
   },
@@ -717,6 +981,9 @@ const OPS = {
   async type({ tabId, text, selector, script }) {
     if (selector) await OPS.clickEl({ tabId, selector, script })
     await ensure(tabId)
+    // 名牌写上在输什么；密码框只显示圆点，不把密码亮在屏幕上
+    const shown = JSON.stringify(text.length > 24 ? text.slice(0, 24) + '…' : text)
+    await cursorFx(tabId, `(() => { const a = document.activeElement; window.__dshCursor.label(a && a.type === 'password' ? '输入 ••••••' : '输入「' + ${shown} + '」'); return 1 })()`)
     await send(tabId, 'Input.insertText', { text })
     return { typed: text.length, selector: selector || null }
   },
@@ -784,11 +1051,15 @@ const OPS = {
 
   // ── 输入类 ───────────────────────────────────────────────────────────────
 
-  async hover({ tabId, x, y, selector }) {
+  async hover({ tabId, x, y, selector, script }) {
     let px = Number(x) || 0, py = Number(y) || 0, target = null
     if (selector) {
       const pt = await pointOf(tabId, `const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; return __dsh_point(el);`)
       px = pt.x; py = pt.y; target = pt
+    }
+    if (script) {
+      const d = await cursorMove(tabId, script, px, py, { label: `悬停 ${target ? target.text || target.tag : `(${Math.round(px)}, ${Math.round(py)})`}` })
+      if (d !== null) await settle(d)
     }
     await send(tabId, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(px), y: Math.round(py), buttons: 0 })
     return { x: Math.round(px), y: Math.round(py), target }
@@ -796,6 +1067,7 @@ const OPS = {
 
   async scroll({ tabId, x = 200, y = 200, deltaY = 600, deltaX = 0 }) {
     const before = await evaluate(tabId, 'Math.round(window.scrollY)')
+    await cursorFx(tabId, `(window.__dshCursor.label(${JSON.stringify(deltaY < 0 ? '向上滚动' : '向下滚动')}, 1400), window.__dshCursor.scroll(${deltaY < 0 ? -1 : 1}), 1)`)
     await sendNoReply(tabId, 'Input.dispatchMouseEvent', {
       type: 'mouseWheel', x: Math.round(x), y: Math.round(y),
       deltaX: Math.round(deltaX), deltaY: Math.round(deltaY),
@@ -868,10 +1140,18 @@ const OPS = {
         const el = document.querySelector(${JSON.stringify(selector)});
         if (!el) return null;
         el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
-        return new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(() => {
-          const r = el.getBoundingClientRect();
-          res({ x: r.left, y: r.top, width: r.width, height: r.height });
-        })));
+        // 后台标签页会暂停 rAF —— 只等 rAF 会卡满 15 秒，定时器兜底（同 __dsh_point）
+        return new Promise((res) => {
+          let done = false;
+          const finish = () => {
+            if (done) return;
+            done = true;
+            const r = el.getBoundingClientRect();
+            res({ x: r.left, y: r.top, width: r.width, height: r.height });
+          };
+          requestAnimationFrame(() => requestAnimationFrame(finish));
+          setTimeout(finish, 120);
+        });
       })()`)
       if (!rect) throw new Error(`没找到元素: ${selector}`)
       clip = { x: rect.x, y: rect.y, width: rect.width, height: rect.height, scale: 1 }
@@ -884,11 +1164,13 @@ const OPS = {
   },
 
   async network({ tabId, limit = 40, filter, clear, reload = false, waitMs = 2500 }) {
-    if (clear) { NET.length = 0; return { cleared: true } }
+    // 只清这个标签页的；不给 tabId 才全清（别把别的标签页的记录也抹了）
+    const dropTab = (id) => { for (let i = NET.length - 1; i >= 0; i--) if (NET[i].tabId === id) NET.splice(i, 1) }
+    if (clear) { if (tabId != null) dropTab(Number(tabId)); else NET.length = 0; return { cleared: true } }
     // Network 事件只在 attach 之后才有，所以先 attach；要历史就 --reload 刷一次
     if (tabId != null && reload) {
       await ensure(tabId)
-      NET.length = 0
+      dropTab(Number(tabId))
       await send(tabId, 'Page.reload', {})
       await new Promise(r => setTimeout(r, Number(waitMs)))
     } else if (tabId != null) {
@@ -898,7 +1180,7 @@ const OPS = {
     if (filter) items = items.filter(n => (n.url || '').includes(filter) || (n.method || '').includes(filter))
     return {
       items: items.slice(-limit).map(n => ({
-        method: n.method, status: n.status, url: n.url, type: n.type, ms: n.ms, failed: n.failed,
+        id: n.id, method: n.method, status: n.status, url: n.url, type: n.type, mime: n.mime, ms: n.ms, failed: n.failed,
       })),
     }
   },
@@ -936,31 +1218,156 @@ const OPS = {
     return { count: frames.length, frames }
   },
 
-  /** 页内光标：CLI 把脚本内容传进来，这里只负责注入 + 调用 */
-  async cursor({ tabId, script, action, x, y, duration }) {
-    if (script) {
-      await evaluate(tabId, script)
-      await evaluate(tabId, '(() => { if (!window.__dshCursor) throw new Error("光标脚本没装上"); return "ok" })()')
-    }
-    if (action === 'hide') {
-      try { await evaluate(tabId, 'window.__dshCursor.hide()') }
-      finally { cursorReady.delete(Number(tabId)); await markCursor(tabId, false) }
-      return { action }
-    }
-    if (action === 'move') { await evaluate(tabId, `window.__dshCursor.move(${Number(x)}, ${Number(y)})`); return { action, x, y } }
-    if (action === 'click') {
-      await evaluate(tabId, `window.__dshCursor.move(${Number(x)}, ${Number(y)})`)
-      await evaluate(tabId, `window.__dshCursor.click(${Number(x)}, ${Number(y)})`)
-      return { action, x, y }
-    }
-    if (action === 'clear') {
+  /** 页内光标：调用方把脚本内容传进来（每次都带也没事，注入过就不再执行），这里负责注入 + 调用 */
+  async cursor({ tabId, script, action, x, y, duration, straight, text }) {
+    const id = Number(tabId)
+    if (action === 'hide' || action === 'clear') {
       try { await evaluate(tabId, 'window.__dshCursor && window.__dshCursor.hide()') }
-      finally { cursorReady.delete(Number(tabId)); await markCursor(tabId, false) }
+      finally { cursorReady.delete(id); cursorPos.delete(id); await markCursor(tabId, false) }
       return { action }
     }
-    throw new Error(`不认识的光标动作: ${action}（move/click/hide/clear）`)
+    if (!showCursor) return { action, skipped: '用户在弹窗里关了页内光标', duration: 0 }
+    const missing = () => new Error('光标脚本没装上（第一次调用要带 script）')
+    if (action === 'move' || action === 'click') {
+      const d = await cursorMove(tabId, script, x, y, { duration, straight, label: text })
+      if (d === null) throw missing()
+      if (action === 'click') {
+        await settle(d)
+        await cursorDo(tabId, script, `(window.__dshCursor.click(${Math.round(x)}, ${Math.round(y)}), 1)`)
+      }
+      return { action, x, y, duration: d }
+    }
+    const fx = { down: 'down()', up: 'up()', label: `label(${JSON.stringify(String(text || ''))})` }[action]
+    if (!fx) throw new Error(`不认识的光标动作: ${action}（move/click/down/up/label/hide/clear）`)
+    if ((await cursorDo(tabId, script, `(window.__dshCursor.${fx}, 1)`)) === undefined) throw missing()
+    return { action }
   },
 }
+
+// ── 弹窗（popup.html）的接口 ─────────────────────────────────────────────────
+
+async function buildState() {
+  if (port && (!hostInfo || Date.now() - hostInfo.at > 5000)) post({ hostPing: true })
+  const now = Date.now()
+  const tabInfo = new Map()
+  for (const t of await chrome.tabs.query({})) tabInfo.set(t.id, t)
+  const self = `chrome-extension://${chrome.runtime.id}/`
+  const tabView = (id) => {
+    const t = tabInfo.get(id)
+    if (!t || (t.url || '').startsWith(self)) return null   // 弹窗页自己不算
+    return {
+      // 我们给受控标签页换上的小鼠标图标不是网站自己的，别拿来当它的图标
+      id, title: t.title || '', url: t.url || '', favIconUrl: t.favIconUrl === CURSOR_FAVICON ? '' : t.favIconUrl || '',
+      attached: attached.has(id), busy: inflight.has(id), lastUsed: lastUsed.get(id) || 0,
+      dialog: dialogs.get(id) || null,
+    }
+  }
+  const owned = new Set()
+  const sessions = []
+  for (const [k, s] of [...SESSIONS].sort((a, b) => b[1].last - a[1].last)) {
+    for (const id of s.tabs) if (!tabInfo.has(id)) s.tabs.delete(id)
+    const tabs = [...s.tabs].map(tabView).filter(Boolean)
+      .sort((a, b) => (b.attached - a.attached) || (b.lastUsed - a.lastUsed))
+    // 两小时没动静、手上也没有标签页的会话就不显示了
+    if (!tabs.some((t) => t.attached) && now - s.last > 2 * 3600e3) { SESSIONS.delete(k); continue }
+    tabs.forEach((t) => owned.add(t.id))
+    sessions.push({ key: s.key, kind: s.kind, session: s.session, pid: s.pid,
+      first: s.first, last: s.last, ops: s.ops, errors: s.errors, tabs })
+  }
+  const orphans = [...attached].filter((id) => !owned.has(id)).map(tabView).filter(Boolean)
+  return {
+    now,
+    version: chrome.runtime.getManifest().version,
+    connected: !!port,
+    paused,
+    host: hostInfo,
+    idleMs: DETACH_IDLE_MS,
+    attachedCount: controlledCount(),
+    showCursor,
+    sessions,
+    orphans,
+    activity: ACTIVITY.slice(-30).reverse().map((a) => ({
+      ...a, title: a.tabId != null && tabInfo.has(a.tabId) ? tabInfo.get(a.tabId).title : '',
+    })),
+  }
+}
+
+async function releaseTab(tabId) {
+  await OPS.detach({ tabId })
+  ACTIVITY.push({ at: Date.now(), last: Date.now(), key: 'user', call: null, tool: null, hint: '',
+    op: 'userRelease', tabId: Number(tabId), ok: true, ms: 0, ops: 1 })
+  if (ACTIVITY.length > ACTIVITY_MAX) ACTIVITY.shift()
+}
+
+async function diagnostics() {
+  const st = await buildState()
+  const h = st.host
+  const lines = [
+    `DSH Bridge ${st.version}（${chrome.runtime.id}）`,
+    `浏览器：${navigator.userAgent}`,
+    `宿主：${st.connected ? '已连接' : '没连上'}${h ? `，pid ${h.pid}，socket ${h.socketOk ? '在听' : '没在听'}（${h.socket}），已处理 ${h.served} 次请求` : ''}`,
+    `暂停：${st.paused ? '是' : '否'}；页内光标：${st.showCursor ? '显示' : '关闭'}；受控标签页：${st.attachedCount}`,
+    `会话：${st.sessions.map((s) => `${s.key}（${s.ops} 次操作，${s.errors} 次失败，${s.tabs.length} 个标签页）`).join('；') || '无'}`,
+    '',
+    '最近失败：',
+    ...ACTIVITY.filter((a) => !a.ok).slice(-10).map((a) =>
+      `  ${new Date(a.at).toTimeString().slice(0, 8)} ${a.tool || a.op} ${a.hint || ''} → ${a.error}`),
+    '',
+    '扩展日志（最近 30 行）：',
+    ...LOG.slice(-30).map((l) => `  ${l}`),
+  ]
+  return lines.join('\n')
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg || !msg.popup || sender.id !== chrome.runtime.id) return
+  const run = async () => {
+    switch (msg.popup) {
+      case 'state':
+        return buildState()
+      case 'reconnect':
+        if (port) { try { port.disconnect() } catch {} ; port = null; hostInfo = null }
+        connect()
+        await new Promise((r) => setTimeout(r, 700))
+        return buildState()
+      case 'release':
+        await releaseTab(msg.tabId)
+        return buildState()
+      case 'releaseAll':
+        for (const id of [...attached]) await releaseTab(id)
+        return buildState()
+      case 'focus':
+        await OPS.activate({ tabId: msg.tabId })
+        return buildState()
+      case 'pause':
+        paused = !!msg.on
+        await chrome.storage.local.set({ paused })
+        log(paused ? '用户暂停了浏览器控制' : '用户恢复了浏览器控制')
+        if (paused) for (const id of [...attached]) await releaseTab(id)
+        updateBadge()
+        return buildState()
+      case 'cursor':
+        showCursor = !!msg.on
+        await chrome.storage.local.set({ showCursor })
+        log(showCursor ? '用户打开了页内光标' : '用户关掉了页内光标')
+        if (!showCursor) {
+          for (const id of [...cursorReady]) {
+            cursorReady.delete(id)
+            cursorPos.delete(id)
+            await hidePageCursor(id)
+            await markCursor(id, false)
+          }
+        }
+        return buildState()
+      case 'diagnostics':
+        return { text: await diagnostics() }
+      default:
+        throw new Error(`弹窗发了不认识的请求: ${msg.popup}`)
+    }
+  }
+  run().then(sendResponse, (e) => sendResponse({ error: String((e && e.message) || e) }))
+  return true
+})
 
 // ── 保活 / 启动 ─────────────────────────────────────────────────────────────
 
@@ -977,10 +1384,14 @@ chrome.runtime.onInstalled.addListener(connect)
 // 每次 worker 起来都对一次账：认领还活着的分组、拆掉孤儿组和残留角标
 reconcileGroups()
 chrome.tabs.onRemoved.addListener((tabId) => {
+  for (const sess of SESSIONS.values()) sess.tabs.delete(tabId)
+  ownTabs.delete(tabId)
   attached.delete(tabId)
+  updateBadge()
   lastUsed.delete(tabId)
   groupedTabs.delete(tabId)   // 标签页都没了，组也轮不到我们拆
   cursorReady.delete(tabId)
+  cursorPos.delete(tabId)
   tabEpoch.delete(tabId)
   dialogs.delete(tabId)
   loadWaiters.delete(tabId)

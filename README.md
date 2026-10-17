@@ -42,7 +42,7 @@ Three things make the difference:
 
 - 🔌 **Native messaging, not a port.** The extension talks to a local Node host over Chrome's native messaging pipe; the CLI reaches the host through a `0600` Unix socket guarded by a token. No TCP port to scan, no origin to spoof.
 - 🎯 **`chrome.debugger`, not injected scripts.** Clicks and keystrokes are dispatched as real CDP `Input.*` events, so they carry a user gesture — popups open, focus works, and sites that reject synthetic events behave normally. Screenshots, network, console and raw CDP come for free.
-- 👀 **A cursor the human can see.** Every click flies a small in-page cursor to the target, flashes a ripple and shows a label — and because it is rendered inside the page, **it appears in screenshots**.
+- 👀 **A cursor the human can see.** A blue arrow with a "DSH" name tag glides along a gentle arc to the target; the tag says what it is doing (click / type / drag / scroll) and each click leaves a ripple. It sits above modals and fullscreen, and picks up where it was after a navigation. Because it is rendered inside the page, **it appears in screenshots**.
 
 ## 🏗 Architecture
 
@@ -97,19 +97,21 @@ cb tabs
 
 Until step 2 is done the `browser_*` tools fail **loudly with exactly these steps** — never silently.
 
-### 🧩 The nine native tools
+### 🧩 The eleven native tools
 
 | Tool | What it does |
 |---|---|
 | `browser_tabs` | list / find / open / close / activate tabs |
-| `browser_read` | visible text, HTML, attributes, page info |
-| `browser_click` | click by selector, by text, or by coordinates |
+| `browser_read` | **numbered list of clickable / fillable elements** (`snapshot`), visible text, HTML, attributes, page info |
+| `browser_click` | click by element number (`ref`), selector, text, or coordinates |
 | `browser_input` | type, press keys, select, upload, hover, scroll |
-| `browser_nav` | navigate and wait for load |
+| `browser_nav` | go to a URL, **back / forward / reload**, and wait for load |
 | `browser_screenshot` | screenshot **returned as an image** (viewport / full / element) |
 | `browser_eval` | run JS in the page |
-| `browser_wait` | wait for an element to appear |
+| `browser_wait` | wait for an element, **a piece of text, or a URL** — or for it to go away (`gone`) |
 | `browser_dialog` | release alert / confirm / prompt |
+| `browser_drag` | drag by element number, selector, **visible text** or coordinates — HTML5 drag-and-drop and mouse-driven widgets (sliders, sortable lists) |
+| `browser_devtools` | **console output + uncaught JS errors, network requests (status, timing), a request's response body** |
 
 > A freshly installed bundle is not hot-loaded; DSH must be restarted once.
 > `dsh plugin add` from the CLI refuses the app-managed profile — use the sidebar there.
@@ -117,9 +119,10 @@ Until step 2 is done the `browser_*` tools fail **loudly with exactly these step
 
 ### 👀 What you see while it works
 
+- **Click the toolbar icon** for a live panel: whether Chrome ↔ local host ↔ DSH are connected, **which DSH sessions are driving which tabs** (jump to a tab, or release it with one click), the last actions with their errors, a **pause switch** that makes the browser off-limits until you turn it back on, and *copy diagnostics* for bug reports. The icon badge shows how many tabs are under control (`!` = host down, `⏸` = paused).
 - Every tab the agent touches **joins a blue tab group titled "DSH agent 正在操作"**, and the group is taken apart the moment it lets go — after 60s idle, on `cb detach`, if the tab is closed, or if you press *Cancel* on Chrome's debugging banner.
 - The little mouse (favicon + toolbar icon) means **there is actually a cursor in that page**: it lights up when the agent draws its on-page cursor (clicking, typing), and goes away when that cursor is hidden, the page navigates, or the agent lets go. Reading a page never lights it up.
-- Inside the page, the on-page cursor draws every click — and it appears in screenshots, so you and the model see the same picture.
+- Inside the page, the on-page cursor draws every click, keystroke, drag and scroll — and it appears in screenshots, so you and the model see the same picture. If it gets in your way, switch it off in the panel (the actions still happen, it just isn't drawn). Password fields only ever show dots.
 
 ### 🛠 From source (development)
 

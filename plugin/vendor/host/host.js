@@ -34,6 +34,10 @@ fs.chmodSync(LOG_FILE, 0o600)
 
 let extReady = false
 let lastExtMsg = 0
+const STARTED_AT = Date.now()
+let served = 0          // 处理过多少次 socket 请求（给扩展弹窗看）
+let lastClientAt = 0
+let listening = false
 
 function toExtension(obj) {
   const payload = Buffer.from(JSON.stringify(obj), 'utf8')
@@ -63,6 +67,14 @@ function onExtensionMessage(raw) {
     return
   }
   if (msg.keepalive) return
+  if (msg.hostPing) {
+    // 扩展弹窗要看的：宿主活着没、socket 在不在听、最近一次被调用是什么时候
+    try {
+      toExtension({ hostPong: true, pid: process.pid, startedAt: STARTED_AT, node: process.version,
+        socket: SOCK, socketOk: listening && fs.existsSync(SOCK), served, lastClientAt, pending: waiting.size })
+    } catch (e) { log('回 hostPong 失败:', String(e)) }
+    return
+  }
 
   const pending = waiting.get(msg.id)
   if (!pending) return
@@ -111,7 +123,7 @@ function forwardToExtension(sock, req) {
   }, TIMEOUT_MS)
   waiting.set(id, { sock, timer })
   try {
-    toExtension({ id, op: req.op, args: req.args || {} })
+    toExtension({ id, op: req.op, args: req.args || {}, ...(req.client ? { client: req.client } : {}) })
   } catch (e) {
     clearTimeout(timer)
     waiting.delete(id)
@@ -126,6 +138,8 @@ function handleLine(sock, line) {
     log('token 不匹配，拒绝')
     return reply(sock, { id: req.id, ok: false, error: 'token 不匹配' })
   }
+  served++
+  lastClientAt = Date.now()
   if (req.op === 'status') {
     return reply(sock, {
       id: req.id, ok: true,
@@ -166,6 +180,7 @@ function startServer() {
 
   server.on('error', (e) => { log('socket 服务出错:', String(e)); shutdown(1) })
   server.listen(SOCK, () => {
+    listening = true
     fs.chmodSync(SOCK, 0o600)
     fs.writeFileSync(TOKEN_FILE, TOKEN + '\n')
     fs.chmodSync(TOKEN_FILE, 0o600)

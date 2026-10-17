@@ -430,3 +430,177 @@ DSH 本来有这套机制：适配器预检超预算 → 抛 `IMAGE_OFFLOAD_REQU
   2. 页内光标用 `sr.innerHTML` 注入 —— Gmail 这类**开了 Trusted Types** 的站点直接抛
      `This document requires 'TrustedHTML' assignment`，连带整个点击作废。改成 DOM API +
      `<style>.textContent`。
+
+---
+
+# 2026-10-17 晚 —— 元素编号 + 后台标签页点击修复
+
+## 元素编号（`plugin/refs.js`）
+
+- `browser_read what=snapshot` 列出能点/能填的元素，一行一个：`[12] button "提交"`、
+  `[13] textbox "邮箱" = "a@b.c"`、`[14] link "首页" → /home`，外加 h1–h3 当路标。
+- `browser_click` / `browser_input` / `browser_screenshot(element)` 都收 `ref=N`。
+- **只改插件，不改扩展**：编号打成 `data-dsh-ref="N"` 属性，于是编号就是选择器，
+  扩展里现成的 clickEl / type / select / upload / hover 全都直接复用。
+- 开放 shadow root 里的元素选择器够不着，另记 WeakRef（`window.__dshSnap.shadow`），按坐标操作。
+- 同一元素再快照沿用旧编号；元素没了报「编号 N 已失效」，让模型重拍快照。
+- 认「手搓按钮」靠 `cursor:pointer`，只认从这一层开始变手型的元素（子元素继承的不算）。
+- 3000 行表格的页面：45ms，默认列 300 个，剩下的提示用 selector 缩小范围。
+
+## 后台标签页：点击/打字其实全没生效（老 bug，这次才发现）
+
+- 症状：`browser_tabs open` 默认后台开页，之后 `browser_click` 回「已点击」，页面纹丝不动；
+  `Input.insertText` 也一样。页面 `visibilityState` 是 `hidden`。
+- 修法：动手前发 `Emulation.setFocusEmulationEnabled {enabled:true}`（Playwright 对每个页面都开）。
+  实测：同一个后台标签页，开之前 3 次点击 0 次生效，开之后立刻生效。
+- 空闲断开会清掉模拟，所以插件每次 click / input 前都补一次（走现成的 `cdp` op）。
+- 同一个坑的另一面：扩展里 `shot(selector)` 取框只等 rAF，后台标签页会卡满 15 秒。
+  元素截图改成插件自己取框（rAF + 定时器兜底）再直接 `Page.captureScreenshot`。
+- `cb` 命令行走的是扩展，还没有这个修复；以后改扩展时把焦点模拟挪进 `ensure()`。
+
+## 验证
+
+`node scratch/test-refs.mjs` —— 在真 Chrome 后台开本地测试页，走插件注册的工具（和模型同一份代码），15 项。
+
+---
+
+# 2026-10-17 深夜 —— 调试工具、后退前进、等文字、拖拽（v1.8.0，11 个工具）
+
+## 新工具 / 新参数
+
+- `browser_devtools`（`plugin/devtools.js`）：`console` / `network` / `response` / `clear`。
+  - 记录一直都在扩展里，这次只是接成 DSH 工具，外加：网络记录带 requestId（`response` 靠它拿返回内容）、
+    `Runtime.exceptionThrown`（未捕获报错）和 `Log.entryAdded`（浏览器自己报的）也进控制台缓冲。
+  - 调试器接上那一刻 V8 会把旧 console **补发**一遍，但**补发不带对象预览**，只剩 `Object`。
+    扩展里对这种参数回页面 `Runtime.callFunctionOn` 展开成 `{a: 1, b: "x"}`；去重改按原始文字比。
+  - 网络 `clear` / `reload` 只清当前标签页，不再把别的标签页的记录一起抹掉。
+- `browser_nav action=back|forward|reload`（`plugin/nav.js`）：动手前在旧页面 window 上做记号，
+  记号没了（换了文档）或网址变了（单页应用）且 readyState=complete 就算到了。到头了给人话报错。
+- `browser_wait` 加 `text` / `url` / `gone`：插件里轮询 eval；`selector` 且不是 gone 时仍走扩展的 waitFor。
+- `browser_drag`（`plugin/drag.js`）：
+  - 起点带 `draggable="true"` → 页内合成 dragstart/dragenter/dragover/drop/dragend，共用一个 DataTransfer
+    （CDP 鼠标事件在有界面的 Chrome 里起不了原生拖放会话）；
+  - 其它 → CDP 按下 / 分步移动 / 松开（滑块、排序列表、画布）。
+  - 端点可以是 ref / selector / **text** / 坐标。DSH 实测发现放置区（「放这里」框）不在 snapshot 里，
+    模型只好自己 eval 算坐标，所以加了按文字找（包含该文字、看得见、面积最小的元素）。
+
+## 扩展自动重载
+
+- 已解压扩展：setup 把新文件拷进扩展目录后 Chrome 不会自己重载。插件 `apply()` 里对一下
+  扩展目录 manifest 版本和正在跑的版本（`version` op），不一样就发 `reload`。实测 1.7.0 → 1.8.0 自动生效。
+- 所以**改了扩展代码一定要升版本号**，不然用户那边跑的还是旧扩展。
+
+## 顺手修的
+
+- `call()` 的超时定时器成功后没清，每次调用挂一个 60 秒定时器（测试脚本因此要等一分钟才退出）。
+
+## 验证
+
+- `node scratch/test-more.mjs` —— 20 项：控制台（含补发对象展开）、网络 + 返回内容、清空、
+  等文字/等网址/等消失/超时、拖拽（HTML5 按 selector/ref/文字、滑块按坐标）、前进后退刷新（含单页应用）。
+- `test-refs` 15 项、`test-image-guard`、`test-setup` 照旧全过。
+- DSH 桌面端：重启后 11 个工具注册成功，让模型按 7 步走一遍，全部用新工具完成；修完补发对象和按文字拖拽后再复测一遍。
+
+---
+
+# 2026-10-17 深夜 · 二 —— 扩展弹窗（v1.9.0）
+
+照着 WorkBuddy 的样子做了点图标弹出的面板，往前多走了几步。
+
+## 面板上有什么
+
+- **连接状态**：Chrome 扩展 → 本地宿主 → DSH 三段链路，各自亮绿/红/虚线；没连上时直接给出
+  `dsh-chrome-bridge update` 和复制按钮、重新连接按钮。
+- **活跃会话**：按 **DSH 会话**归组（不是按进程），每个会话下列出它碰过的标签页：
+  操作中 / 待命（约 N 秒后自动松手）/ 有弹窗挡着 / 已松手；每行能「切过去」和「松手」。
+- **最近动作**：一次工具调用一条（同一个 callId 的多个底层 op 合并），带一句提示（`[3]`、`「加载完成」`、`back`）、
+  耗时、失败原因（CDP 原始 JSON 报错只留 message）。
+- **暂停开关**：存在 `chrome.storage.local`，关掉后除版本检查/松手外的操作一律拒绝（报错文字告诉模型让用户去开）；
+  暂停时顺手把受控标签页全部松手。扩展自己的页面（弹窗页）不受暂停限制，否则自动化测试解除不了暂停。
+- **复制诊断信息**：版本、宿主 pid/socket、会话、最近失败、扩展日志 30 行。
+- 工具栏角标：受控标签页数；`!` 宿主断了；`⏸` 已暂停。manifest 加了 `action`（以前没有，`chrome.action.setIcon` 一直静默失败）。
+
+## 会话怎么认出来的
+
+- DSH 调工具时第二个参数 `exec` 实测有：`token, callId, rootCallId, name, signal, agent, …`；
+  `agent` 上能拿到 DSH 的会话 id（`sessionOf()` 依次试 `agent.sessionId / agent.session.id / agent.id`），
+  实测拿到的是 `session-<uuid>`，和 `~/.dsh/sessions/…/session-<id>` 对得上。子 agent 会不会单独算一个会话还没验证。
+- 插件用 `AsyncLocalStorage` 把 `{kind, pid, session, tool, call, hint}` 挂到这次工具调用上，`call()` 每个请求都带着；
+  宿主原样转发 `client` 字段；扩展按它记账。旧宿主会丢掉这个字段 → 弹窗里显示「来源不明」，不影响干活。
+- 宿主新增 `hostPing → hostPong`（pid、启动时间、socket 在不在听、处理过多少请求），弹窗用它画中间那段。
+
+## 测试
+
+- 界面：`popup.html` 配一个假 `chrome.runtime` 的预览页，在浏览器里看了 连上/没连上/暂停/空 四种状态 × 亮暗两种主题。
+- `node scratch/test-popup.mjs` —— 6 项：真扩展里开弹窗页，读状态卡、会话归组、最近动作、点「松手」、拨暂停开关、取诊断信息。
+- DSH 桌面端实测：真实会话 id 被认出来，标签页挂在对应会话下。
+- 踩到的坑：第一版暂停把「对弹窗页本身的 cdp/open」也拦了，测试脚本解除不了暂停，扩展卡在暂停状态。
+  改成扩展自己的页面不受限，并且测试的 finally 先解除暂停再收尾。
+
+---
+
+# 2026-10-17 深夜 · 三 —— 页内光标 v3 + 面板打磨（v1.10.0）
+
+用户说原来的光标「做的不咋地」。重做了一遍。
+
+## 光标（`in-page-cursor.js` v3）
+
+- **样子**：实心蓝色渐变箭头 + 白描边 + 跟着走的「DSH」名牌（学 Figma 多人光标）。
+  名牌会展开成「DSH · 点击 登录」「DSH · 输入「…」」「DSH · 拖拽 [3] → [7]」，2.6 秒后收回。
+- **动**：沿一条轻微的弧线滑过去，先快后慢，距离越远越久（0.22–0.65 秒），箭头顺着方向微微歪一下。
+  旧版是 0.1 秒瞬移再抖一下。
+- **点**：两圈涟漪 + 中心点；双击两组。按下时箭头缩一下。
+- **拖**：按住时箭头外面一圈光晕，跟着真实鼠标一起走（时长 ≈ 步数 × 24ms）。
+- **滚动**：箭头旁边冒个上/下箭头，名牌写「向下滚动」。
+- **悬停**：以前悬停不画光标，现在也画。
+- **闲着**：6 秒没动作就变淡、名牌收起。系统开了「减少动态效果」就不做动画。
+- **技术点**：
+  - 全用 Web Animations（按时间算）——后台标签页 rAF 停了也不会卡半路，截图永远拍到该在的位置；终点先写进 inline style。
+  - 进 top layer（`popover="manual"`）：页面开了 `<dialog>` 模态框 / 全屏也盖不住它（实测在模态框遮罩上面）。
+  - 自定义元素 `<dsh-cursor>` + Shadow DOM + `all:initial !important`：页面 CSS 动不了它。
+  - 还是只用 DOM API 搭（Trusted Types 站点能注入）。
+  - 页面里有旧版本光标就换掉。
+
+## 扩展这边
+
+- 点击前**等光标真的到位**再发事件（按 `move()` 返回的时长等，120–700ms），不再固定 300ms。
+- 每个标签页记住光标位置：页面跳转后重新注入时从原处出现再滑过去；松手后清掉。
+- `cursorDo()`：先探一下页面里有没有 v3 光标，没有（刚跳转 / 旧版本）就重注再调，不再靠可能过期的 `cursorReady`。
+- `cursor` op 加了 `down / up / label`，`move` 支持 `duration / straight / text`，返回时长。拖拽用它。
+- 名牌文字：输入框没 innerText 时用 placeholder / aria-label；**密码框的 value 绝不拿出来**（以前点一个填好的密码框，
+  结果文字里会带出密码）；输入密码时名牌只显示圆点。
+
+## 面板
+
+- 新开关「页面里显示 DSH 光标」：关掉后点击照做、只是不画；已经画在页面上的当场收掉。存在 `chrome.storage.local`。
+- 两个开关下面各加一行小字说明。
+- 「正在控制 N 个标签页」和角标数字不再把扩展自己的页面算进去。
+- 受控标签页的图标被我们换成了小鼠标，面板里不再拿它当网站图标（显示小地球）。
+
+## 验证
+
+- 真 Chrome 后台标签页截图逐帧看：滑行中、涟漪、输入名牌、模态框之上、拖拽光晕、滚动提示、变淡、刷新后接着出现。
+- `test-popup` 加了第 7 项：关光标 → 点击照常、页面里没有 `<dsh-cursor>`；开光标 → 回来且是 v3。
+- 其它回归：refs 15 / more 20 / image-guard / setup 全过。
+- DSH 桌面端：新会话里让它「输入 → 点搜索 → 拖拽 → 悬停」，43 秒做完，结果对；过程截图里光标每步都在。测完已还原。
+- README 的动图重录了（`assets/cursor-demo.gif`）。
+
+## 标签页小鼠标（追加）
+
+- 图标重画成和页内光标同一个箭头（同一条路径、同一套蓝色渐变 + 白描边），用 Chrome 自己栅格化成 16/32/48/128；
+  旧的是 Codex 那种雾面三角，和新光标对不上。favicon 的 data URL 也换成新的 32px。
+- 修了两个老毛病（实测发现）：
+  - 页面自己写了 `<link rel=icon>` 的，Chrome 优先用它，**小鼠标根本挂不上去**。现在控制时先把页面的图标 link 的 rel 停掉（记在 data 属性里），松手原样恢复。
+  - 页面没写图标、靠默认 `/favicon.ico` 的，松手后**小鼠标一直挂着不走**。现在松手时补一个指向默认图标的 link 逼 Chrome 重算。
+- 新测试 `scratch/test-favicon.mjs`：两种页面各测「控制前 → 控制中是小鼠标 → 松手后换回原样」。
+
+## 面板改成 iOS 玻璃质感（追加）
+
+- 背后垫三团柔和色块，卡片半透明 + 毛玻璃 + 一圈从左上到右下渐隐的亮边（液态玻璃那道边）；亮暗两套系统色（iOS 的 green/blue/red/orange）。
+- 状态卡：带高光的状态球（绿 ✓ / 橙 ⏸ / 红 !），连通时外圈呼吸；三段链路连通时线上有光点流过。
+- 开关做成 iOS 系统开关（51×31，弹簧动画，按住时圆钮拉长）；两行前面是「设置」那种彩色方块图标，说明文字挪到组下面。
+- 会话：手上有标签页的各一张卡；只是来过、手上空着的挤进同一张卡、一行一个，不再每个都占一张大卡写「此会话暂未控制任何 Tab」。
+- 最近动作：前面一个有色小圆（✓ / ✕ / 人），第二行是标签页标题和时间。
+- 底部两个胶囊按钮浮在内容上（内容滚到后面会被糊掉）；提示条也是玻璃胶囊，弹出带回弹。
+- 滚动条藏了（iOS 没有常驻滚动条；常驻的还会把 368px 宽挤出横向滚动）。
+- 技术上：状态卡和开关改成固定骨架、只改文字和 class，列表内容变了才重画 —— 以前每秒整块 innerHTML，呼吸灯、流动线、开关动画都会被打断。
