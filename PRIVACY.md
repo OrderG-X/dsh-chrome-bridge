@@ -1,0 +1,49 @@
+# Privacy Policy — DSH Bridge (Chrome extension)
+
+_Last updated: 2026-10-17_
+
+DSH Bridge is a local bridge. **It has no server, no analytics, and no network endpoint of its own.** Nothing it reads is sent anywhere by the extension.
+
+## What the extension can see
+
+When you turn it on, it can read and control the pages in your Chrome — that is its entire purpose:
+
+- page content, DOM, console and network activity of tabs (via `chrome.debugger` / CDP),
+- tab list, titles and URLs (`tabs`),
+- the pages you are signed into, including form fields if an agent types into them.
+
+It reads these **only while a local agent (DSH) asks it to**, over Chrome's native-messaging pipe to a helper process running as your macOS user.
+
+## Where the data goes
+
+1. Chrome → native host: over Chrome's native messaging pipe (stdio). **Local only.**
+2. Native host → your DSH agent: over a Unix socket (`/tmp/dsh-bridge.sock`, mode `0600`, plus a token file). **Local only.**
+3. What your DSH agent then does with that content — including sending it to whichever model provider you configured in DSH — is decided by **DSH and your own configuration, not by this extension**. Please read DSH's own privacy terms for that.
+
+The extension itself makes no outbound requests: no telemetry, no update pings, no third-party scripts. All code is in this repository; the extension loads no remote code.
+
+## What is stored
+
+- The extension keeps a small amount of local state (`chrome.storage`) for its own settings.
+- The native host writes nothing to disk except its own log (`/tmp/dsh-bridge.log`) and the socket/token files listed above.
+- Uninstalling the extension and running `./bridge uninstall` (or `install.sh --uninstall`) removes all of it.
+
+## Permissions and why they are needed
+
+| Permission | Why |
+|---|---|
+| `debugger` | Dispatches real CDP input events (clicks, typing, navigation, screenshots) and reads DOM/console/network on the tabs the agent works with. |
+| `tabs` | Lists your tabs so the agent can pick the right one; switches/closes tabs on request. |
+| `nativeMessaging` | The only channel to the local helper process. |
+| `alarms`, `storage` | Keeps the service worker alive while attached and stores local settings. |
+| `<all_urls>` (host permission + content script) | The agent works on whatever page you point it at, and the page-side cursor overlay must be able to draw on any page. |
+
+## Control and revocation
+
+- Chrome shows a permanent “*DSH Bridge is debugging this browser*” banner while attached — click **Cancel** to detach instantly.
+- Turn the extension off (or uninstall it) in `chrome://extensions` and the bridge stops working immediately.
+- `cb detach <tab>` detaches a single tab.
+
+## Contact
+
+Open an issue at <https://github.com/OrderG-X/dsh-chrome-bridge/issues>.

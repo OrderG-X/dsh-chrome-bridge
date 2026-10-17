@@ -26,6 +26,14 @@ import { fileURLToPath } from 'node:url'
 export const HOST_NAME = 'com.dsh.bridge'
 export const EXT_DIR_NAME = 'dsh-bridge-extension'
 
+/**
+ * 商店版扩展 ID（Chrome 应用商店自己分配，跟本地「加载已解压」的 ID 不是一个）。
+ * 上架后把 32 位 item ID 填进来，注册文件的 allowed_origins 就会同时放行两个版本。
+ */
+export const STORE_EXT_IDS = [
+  // 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+]
+
 /** 插件包里的自带目录（vendor/ 跟着 tgz 一起发）。 */
 export function vendorDir() {
   return path.join(path.dirname(fileURLToPath(import.meta.url)), 'vendor')
@@ -134,7 +142,7 @@ export function ensureInstalled(options = {}) {
       description: 'dsh-chrome-bridge native host (local browser control)',
       path: path.join(p.hostDir, 'run.sh'),
       type: 'stdio',
-      allowed_origins: [`chrome-extension://${extId}/`],
+      allowed_origins: [extId, ...STORE_EXT_IDS].map((id) => `chrome-extension://${id}/`),
     }, null, 2)}\n`
 
     let nmPrev = null

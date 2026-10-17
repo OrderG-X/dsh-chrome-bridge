@@ -8,6 +8,7 @@
 #   ./bridge logs        宿主日志 + 扩展日志
 #   ./bridge test        端到端自检
 #   ./bridge pack        打出发版用 tgz（附加到 GitHub Release，目录条目靠它预构建安装）
+#   ./bridge store-pack  打出 Chrome 应用商店用的 zip（扩展本体，去掉 manifest 的 key）
 #   ./bridge uninstall   卸载
 #
 # 装了 DSH 技能 ~/.dsh/skills/browser/SKILL.md —— 新会话会自动知道 cb 怎么用
@@ -107,6 +108,31 @@ print(ok[0]['id'] if ok else '')")
     echo "打包完成 ${OUT}（$(wc -c < "$OUT" | tr -d ' ') bytes）"
     echo "发版时记得附加（资产名必须不带版本号，目录条目用的是 latest/download）："
     echo "  gh release upload <tag> ${OUT} --clobber"
+    ;;
+
+  store-pack)
+    # 上架 Chrome 应用商店用：只打扩展本体，并且去掉 manifest 里的 key
+    # （商店会分配自己的 item ID，key 只在「加载已解压」时用来固定 ID）
+    OUT="$REPO/dist/dsh-bridge-store.zip"
+    TMP="$(mktemp -d)"
+    trap 'rm -rf "$TMP"' EXIT
+    cp -R "$VENDOR/extension/." "$TMP/"
+    node -e '
+      const fs = require("fs"), p = process.argv[1];
+      const m = JSON.parse(fs.readFileSync(p, "utf8"));
+      delete m.key;
+      fs.writeFileSync(p, JSON.stringify(m, null, 2) + "\n");
+    ' "$TMP/manifest.json"
+    mkdir -p "$REPO/dist"
+    rm -f "$OUT"
+    ( cd "$TMP" && zip -qr "$OUT" . -x '.*' )
+    ver="$(node -e 'console.log(require(process.argv[1]).version)' "$TMP/manifest.json")"
+    echo "商店包：${OUT}（扩展 v${ver}，$(wc -c < "$OUT" | tr -d ' ') bytes，manifest 已去掉 key）"
+    echo "zip 内容："
+    ( cd "$TMP" && find . -type f | sed 's|^\./|  |' | sort )
+    echo
+    echo "上架前把 listing 文案填进开发者后台：$REPO/store/listing.md"
+    echo "上架后拿到 32 位 item ID：回填 allowed_origins（plugin/setup.js 的 STORE_EXT_IDS）再发一版插件"
     ;;
 
   uninstall)
