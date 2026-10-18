@@ -42,7 +42,7 @@ Three things make the difference:
 
 - 🔌 **Native messaging, not a port.** The extension talks to a local Node host over Chrome's native messaging pipe; the CLI reaches the host through a `0600` Unix socket guarded by a token. No TCP port to scan, no origin to spoof.
 - 🎯 **`chrome.debugger`, not injected scripts.** Clicks and keystrokes are dispatched as real CDP `Input.*` events, so they carry a user gesture — popups open, focus works, and sites that reject synthetic events behave normally. Screenshots, network, console and raw CDP come for free.
-- 👀 **A cursor the human can see.** A blue arrow with a "DSH" name tag glides along a gentle arc to the target; the tag says what it is doing (click / type / drag / scroll) and each click leaves a ripple. It sits above modals and fullscreen, and picks up where it was after a navigation. Because it is rendered inside the page, **it appears in screenshots**.
+- 👀 **A cursor the human can see.** A translucent light-blue arrow with a "🌐 DSH" name tag glides along a gentle arc to the target; the tag says what it is doing (click / type / drag / scroll) and each click leaves a soft ripple. It shares one style with the desktop cursor of [dsh-mac-computer-use](https://github.com/OrderG-X/dsh-mac-computer-use) (solid there, with a monitor icon), so you can tell at a glance whether the work is in the browser or on the desktop. It sits above modals and fullscreen, and picks up where it was after a navigation. Because it is rendered inside the page, **it appears in screenshots**.
 
 ## 🏗 Architecture
 

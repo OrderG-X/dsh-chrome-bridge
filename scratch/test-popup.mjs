@@ -107,7 +107,7 @@ try {
     assert.match(await textOf(), /已连接/)
     assert.match(await run('browser_read', { tab, what: 'info' }), /弹窗测试页/)
   })
-  await check('光标开关：关掉后照样点得动、页面里没有光标；打开后光标 v3 回来', async () => {
+  await check('光标开关：关掉后照样点得动、页面里没有光标；打开后光标 v4 回来', async () => {
     const flip = (on) => ev(`(() => { const i = document.querySelector('input[data-act="cursor"]'); i.checked = ${on}; i.dispatchEvent(new Event('change', { bubbles: true })) })()`)
     const inPage = async () => JSON.parse(await run('browser_eval', { tab, expression: 'JSON.stringify({ el: !!document.querySelector("dsh-cursor"), v: window.__dshCursor ? window.__dshCursor.version : 0 })' }))
     await flip(false)
@@ -118,7 +118,7 @@ try {
     await sleep(600)
     await run('browser_click', { tab, selector: '#b' })
     const c = await inPage()
-    assert.ok(c.el && c.v === 3, JSON.stringify(c))
+    assert.ok(c.el && c.v === 4, JSON.stringify(c))
   })
   await check('诊断信息：版本、宿主、会话、日志都在', async () => {
     const r = await ev(`chrome.runtime.sendMessage({ popup: 'diagnostics' })`)

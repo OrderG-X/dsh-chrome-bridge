@@ -267,9 +267,10 @@ async function refreshExtension() {
 let cursorCache
 function cursorScript() {
   if (cursorCache !== undefined) return cursorCache
+  // 先用插件自带的那份：版本跟插件走，别的安装脚本往 ~/.dsh/chrome-cursor 里写了旧版也不受影响
   const candidates = [
-    path.join(os.homedir(), '.dsh/chrome-cursor/in-page-cursor.js'), // setup.js 落盘的位置
-    path.join(path.dirname(fileURLToPath(import.meta.url)), 'vendor/in-page-cursor.js'), // 还没落盘时的兜底
+    path.join(path.dirname(fileURLToPath(import.meta.url)), 'vendor/in-page-cursor.js'),
+    path.join(os.homedir(), '.dsh/chrome-cursor/in-page-cursor.js'), // setup.js 落盘的位置（cb 命令行也读它）
   ]
   cursorCache = ''
   for (const file of candidates) {
