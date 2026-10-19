@@ -61,7 +61,7 @@ DSH's agent  (provided by the harness — this repo ships none)
 
 **This repo ships no agent** — the agent above is DSH's own; we only give it hands.
 
-The extension ID is fixed by the public key embedded in `plugin/vendor/extension/manifest.json`, so it is **identical on every machine** and the native-host registration never needs editing.
+The extension ID is fixed by the public key embedded in `plugin/vendor/extension/manifest.json`, so it is **identical on every machine** and the native-host registration never needs editing. The Web Store build has its own store-assigned ID; the host accepts both.
 
 ## 🚀 Install
 
@@ -75,7 +75,11 @@ Requirements: **macOS**, **Google Chrome 116+**, **Node.js 18+**.
 https://github.com/OrderG-X/dsh-chrome-bridge/releases/latest/download/dsh-chrome-bridge.tgz
 ```
 
-**2.** The plugin installs itself on first load (`~/.dsh/chrome-bridge`, `~/dsh-bridge-extension`, plus `com.dsh.bridge.json` in Chrome's `NativeMessagingHosts`). Loading the extension into Chrome is the one step nothing can do for you — Chrome 137+ removed `--load-extension`, and the Web Store does not accept the `debugger` permission. So the plugin walks you to that click instead:
+**2.** The plugin installs the host on first load (`~/.dsh/chrome-bridge`, `~/dsh-bridge-extension`, plus `com.dsh.bridge.json` in Chrome's `NativeMessagingHosts`). All that's left is getting the extension into Chrome — pick one:
+
+**Recommended: install from the Chrome Web Store** — open the [DSH Bridge store page](https://chromewebstore.google.com/detail/bippcbbbipppmhjkjomgdnjbooecbimo) → **Add to Chrome**. No Developer mode, and the extension updates itself.
+
+**Or: load it unpacked** (to run the newest extension from the repo). Chrome 137+ removed `--load-extension`, so that click has to be yours; the plugin walks you to it:
 
 - the first time a `browser_*` tool finds nothing to talk to, it **opens `chrome://extensions` in a background tab** and **puts `~/dsh-bridge-extension` on your clipboard** (once per session; the error text repeats the steps);
 - in the file picker press **⌘⇧G**, then **⌘V**, then Enter — no folder hunting.
@@ -197,8 +201,8 @@ Be honest about what this is: **the extension can read and control every page yo
 - **`chrome://` pages are unreachable** — Chrome forbids injection there. Use a normal tab.
 - An `alert()` blocks the page: `cb info` warns you, `cb dialog accept` releases it.
 - Chrome defers `alert()` in background tabs until the tab is focused.
-- Chrome 137+ removed `--load-extension`, so the very first load must go through `chrome://extensions`.
-- Distributed **unpacked**, not through the Chrome Web Store — the `debugger` permission is not realistically approvable there.
+- Without the Web Store, Chrome 137+ (no more `--load-extension`) needs one manual load through `chrome://extensions`.
+- The Web Store build lags the repo a little: new extension versions wait for store review.
 
 ## 🔎 Related projects
 

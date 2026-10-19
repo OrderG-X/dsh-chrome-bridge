@@ -119,7 +119,7 @@ export function panelHandler({ call, sock, origin, trace = () => {} }) {
           await call('panel', { action: 'releaseAll' }, 15000)
           break
         case 'install': {
-          const r = assistInstall()
+          const r = assistInstall(undefined, { viaStore: body.via === 'store' })
           return send(200, { ...(await panelState(call, sock)), assist: { opened: !!r.opened, clipboard: !!r.clipboard, store: !!r.store } })
         }
         default:

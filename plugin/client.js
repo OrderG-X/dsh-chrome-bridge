@@ -62,6 +62,9 @@ window.__ModuleLoader__.load({
       setupStep1: '打开 Chrome，地址栏进入 chrome://extensions，右上角打开「开发者模式」',
       setupStep2: '点「加载已解压的扩展程序」，选这个文件夹：',
       setupStep3: '装好后这里会自动变成「已连接」',
+      setupStoreAlt: '更省事：直接从 Chrome 应用商店装，不用开发者模式。',
+      openStore: '去商店装',
+      storeOpened: '已在 Chrome 里打开商店页，点「添加至 Chrome」就行',
       setupStore1: '确认 Chrome 开着，并且 DSH Bridge 扩展是启用状态',
       setupStore2: '还不行就重启一下 Chrome',
       openInstall: '帮我打开安装页',
@@ -100,6 +103,9 @@ window.__ModuleLoader__.load({
       setupStep1: 'Open chrome://extensions in Chrome and turn on Developer mode (top right)',
       setupStep2: 'Click "Load unpacked" and choose this folder:',
       setupStep3: 'This page turns to "Connected" once it is loaded',
+      setupStoreAlt: 'Easier: install it from the Chrome Web Store, no Developer mode needed.',
+      openStore: 'Get it from the store',
+      storeOpened: 'Opened the store page in Chrome; click "Add to Chrome"',
       setupStore1: 'Make sure Chrome is running and the DSH Bridge extension is enabled',
       setupStore2: 'If it still does not connect, restart Chrome',
       openInstall: 'Open the install page for me',
@@ -265,8 +271,10 @@ window.__ModuleLoader__.load({
               : h('ol', { className: 'dcb-steps' },
                 h('li', null, t('setupStep1')),
                 h('li', null, t('setupStep2'), ' ', h('span', { className: 'dcb-path' }, state.extDir)),
-                h('li', null, t('setupStep3')))),
-          h(Btn, { primary: true, disabled: busy, onClick: () => run({ action: 'install' }, (s) => t('installOpened') + (s.assist && s.assist.clipboard ? t('pathCopied') : '')) }, t('openInstall')))) : null
+                h('li', null, t('setupStep3'))),
+            state.store ? null : h('p', { className: 'dcb-hint' }, t('setupStoreAlt'))),
+          state.store ? null : h(Btn, { primary: true, disabled: busy, onClick: () => run({ action: 'install', via: 'store' }, t('storeOpened')) }, t('openStore')),
+          h(Btn, { primary: !!state.store, disabled: busy, onClick: () => run({ action: 'install' }, (s) => t('installOpened') + (s.assist && s.assist.clipboard ? t('pathCopied') : '')) }, t('openInstall')))) : null
 
       const switches = state && state.connected ? h('div', { className: 'dcb-card' },
         h('div', { className: 'dcb-row' },

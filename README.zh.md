@@ -61,7 +61,7 @@ DSH 的 agent（harness 自带，本仓库不提供）
 
 **本仓库不含 agent** —— 上面那个 agent 是 DSH（harness）自带的，我们只给它一双手。
 
-扩展 ID 由 `plugin/vendor/extension/manifest.json` 里的公钥固定，所以**每台机器上装的 ID 都一样**，注册文件不用改。
+扩展 ID 由 `plugin/vendor/extension/manifest.json` 里的公钥固定，所以**每台机器上装的 ID 都一样**，注册文件不用改。商店版有商店分配的 ID，宿主两个都认。
 
 ## 🚀 安装
 
@@ -75,7 +75,11 @@ DSH 的 agent（harness 自带，本仓库不提供）
 https://github.com/OrderG-X/dsh-chrome-bridge/releases/latest/download/dsh-chrome-bridge.tgz
 ```
 
-**2.** 插件首次加载会自己装好（`~/.dsh/chrome-bridge`、`~/dsh-bridge-extension`，以及 Chrome `NativeMessagingHosts` 里的 `com.dsh.bridge.json`）。只有「把扩展装进 Chrome」这一步它替不了你 —— Chrome 137+ 移除了 `--load-extension`，应用商店也不收 `debugger` 权限。所以插件会把你送到那一下面前：
+**2.** 插件首次加载会自己装好宿主（`~/.dsh/chrome-bridge`、`~/dsh-bridge-extension`，以及 Chrome `NativeMessagingHosts` 里的 `com.dsh.bridge.json`）。剩下只差把扩展装进 Chrome，两种装法选一个：
+
+**推荐：从 Chrome 应用商店装** —— 打开 [DSH Bridge 商店页](https://chromewebstore.google.com/detail/bippcbbbipppmhjkjomgdnjbooecbimo) → **添加至 Chrome**。不用开发者模式，扩展以后也会自动更新。
+
+**或者：加载未打包的扩展**（想用仓库里最新的扩展时）。Chrome 137+ 移除了 `--load-extension`，这一下得你自己点，插件会把你送到那一下面前：
 
 - 第一次有 `browser_*` 工具发现没宿主可连时，它会**在后台标签页打开 `chrome://extensions`**，并**把 `~/dsh-bridge-extension` 复制进剪贴板**（每个会话只做一次；报错文字里也写着这几步）；
 - 文件框里按 **⌘⇧G** → **⌘V** → 回车 就选好了，不用在目录树里翻。
@@ -196,8 +200,8 @@ dsh-chrome-bridge uninstall
 - **`chrome://` 内部页进不去** —— 浏览器禁止注入，换普通标签页
 - `alert()` 会把页面卡死：`cb info` 会警告，`cb dialog accept` 放行
 - Chrome 会把后台标签页的 `alert()` 推迟到该标签页获得焦点才弹
-- Chrome 137+ 移除了 `--load-extension`，首次必须在 `chrome://extensions` 手动加载
-- **不走 Chrome 应用商店** —— `debugger` 权限在那里基本不可能过审
+- 不走商店的话，Chrome 137+ 移除了 `--load-extension`，首次得在 `chrome://extensions` 手动加载
+- 商店版会比仓库版晚一点：新版扩展要等商店审核
 
 ## 🔎 相关项目
 

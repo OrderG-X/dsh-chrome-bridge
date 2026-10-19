@@ -14,7 +14,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import net from 'node:net'
 import path from 'node:path'
-import { ensureInstalled, extensionId, installHint, installState, paths, STORE_EXT_IDS } from '../plugin/setup.js'
+import { ensureInstalled, extensionId, installHint, installState, paths, STORE_EXT_IDS, STORE_URL } from '../plugin/setup.js'
 
 const FIXED_EXT_ID = 'mhlkjkblmdleplggfengldbdmkabloce'
 let failures = 0
@@ -52,6 +52,7 @@ try {
   check('报错文案含 chrome://extensions', hint.includes('chrome://extensions'))
   check('报错文案含扩展目录', hint.includes(p.extDir))
   check('报错文案提到应用商店', hint.includes('应用商店'))
+  check('报错文案给出商店链接，而且排在解压装法前面', hint.includes(STORE_URL) && hint.indexOf(STORE_URL) < hint.indexOf('加载已解压的扩展程序'), hint)
 
   // ⑤ 商店版
   const STORE_ID = STORE_EXT_IDS[0]

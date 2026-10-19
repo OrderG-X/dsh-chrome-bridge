@@ -33,8 +33,11 @@ export const EXT_DIR_NAME = 'dsh-bridge-extension'
  * 上架后把 32 位 item ID 填进来，注册文件的 allowed_origins 就会同时放行两个版本。
  */
 export const STORE_EXT_IDS = [
-  'bippcbbbipppmhjkjomgdnjbooecbimo', // 2026-10-18 建的商店条目
+  'bippcbbbipppmhjkjomgdnjbooecbimo', // 2026-10-18 建的商店条目，10-19 过审上线
 ]
+
+/** 商店详情页：没装扩展时最省事的装法（不用开发者模式）。 */
+export const STORE_URL = `https://chromewebstore.google.com/detail/${STORE_EXT_IDS[0]}`
 
 /** 插件包里的自带目录（vendor/ 跟着 tgz 一起发）。 */
 export function vendorDir() {
@@ -233,13 +236,14 @@ export function installHint(home = os.homedir()) {
     ].join('\n')
   }
   return [
-    '浏览器桥还差最后一步（一次性）：',
-    '1. Chrome 打开 chrome://extensions',
-    '2. 右上角打开「开发者模式」',
-    '3. 点「加载已解压的扩展程序」，在文件框里按 ⌘⇧G、粘贴、回车，选这个文件夹：',
-    `   ${s.extDir}`,
-    // TODO(商店审核通过后)：换成商店链接 https://chromewebstore.google.com/detail/bippcbbbipppmhjkjomgdnjbooecbimo
-    '或者从 Chrome 应用商店安装「DSH Bridge」（上架审核中），装上就能用，不用开发者模式。',
+    '浏览器桥还差最后一步（一次性），两种装法选一个：',
+    '· 最省事：从 Chrome 应用商店装 DSH Bridge（不用开发者模式）：',
+    `  ${STORE_URL}`,
+    '· 或者加载已解压的扩展：',
+    '  1. Chrome 打开 chrome://extensions',
+    '  2. 右上角打开「开发者模式」',
+    '  3. 点「加载已解压的扩展程序」，在文件框里按 ⌘⇧G、粘贴、回车，选这个文件夹：',
+    `     ${s.extDir}`,
     '装好后回到这里重试；宿主和 native 注册已经自动装好了，不用再跑任何脚本。',
   ].join('\n')
 }
@@ -255,11 +259,20 @@ function chromeRunning() {
  *     （已经从商店装了就不塞：用不上解压目录，别白占用户剪贴板）
  *   · Chrome 在跑的话，顺手把 chrome://extensions 用后台标签页打开（不抢前台）
  * 只在「宿主连不上」时调用，且每个进程只做一次（见 index.js 的 firstAid）。
+ *
+ * viaStore：设置页上用户点了「去商店装」—— 在 Chrome 前台打开商店页（Chrome 没开也会拉起来），不碰剪贴板。
  */
-export function assistInstall(home = os.homedir()) {
+export function assistInstall(home = os.homedir(), { viaStore = false } = {}) {
   const p = paths(home)
   const store = storeExtension(home)
   const out = { clipboard: false, opened: false, chromeRunning: chromeRunning(), store: !!store }
+  if (viaStore) {
+    try {
+      execFileSync('/usr/bin/open', ['-a', 'Google Chrome', STORE_URL])
+      out.opened = true
+    } catch {}
+    return out
+  }
   if (!store) {
     try {
       execFileSync('/usr/bin/pbcopy', [], { input: `${p.extDir}\n` })
