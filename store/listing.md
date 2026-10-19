@@ -49,7 +49,7 @@ Source code, issues and the helper: https://github.com/OrderG-X/dsh-chrome-bridg
 Developer Tools
 ```
 
-**Language** — English. (Add 中文 as a second language if you want the localized listing.)
+**Language** — English is the default. The package ships `_locales/en` and `_locales/zh_CN`, so the dashboard also offers 中文（简体）: paste the zh_CN copy below there.
 
 **Homepage URL**
 
@@ -67,6 +67,43 @@ https://github.com/OrderG-X/dsh-chrome-bridge/issues
 
 ```
 https://github.com/OrderG-X/dsh-chrome-bridge/blob/main/PRIVACY.md
+```
+
+## 中文商品详情（zh_CN）
+
+在「商品详情」顶部的语言下拉里选 **中文（简体）**，把下面两段贴进去（名称、类别、网址都跟英文一样，不用再填）。
+
+**Summary (zh_CN)**（132 字以内；`./bridge store-pack` 会写进包里的 `_locales/zh_CN`，后台显示为「软件包中的摘要」，不用贴）
+
+```
+用本机的 DSH 智能体操作你正在用的 Chrome：走 native messaging 发送真实点击和输入，不开端口，也不用点 Connect。
+```
+
+**Description (zh_CN)**
+
+```
+DSH Bridge 让本机运行的 DSH（DeepSeek Harness）智能体直接操作你正在用的 Chrome —— 用你的登录状态、你的标签页、你的会话。
+
+不开任何端口，也不用点 Connect：扩展通过 Chrome 的 native messaging 管道和你 Mac 上的一个小助手进程通信，再用真实的 Chrome DevTools Protocol 输入事件来移动鼠标、敲键盘。
+
+你会得到：
+• 真实输入 —— 点击、输入、按键、滚动、拖拽、选文件，都以可信的 CDP 事件发出，不是模拟的 DOM 小把戏。
+• 真实截图 —— 智能体看到的是渲染后的页面，支持整页截图和单个元素截图。
+• 看得见的光标 —— 每个操作都会在页面上画一个光标（带一个小标签，写着它要做什么），截图里也看得到，你能清楚看到智能体在干嘛。
+• 控制面板 —— 点工具栏图标能看到连接状态、每个智能体会话正在控制哪些标签页、最近操作的实时日志，还有一键暂停全部控制和「全部松手」。
+• 你的会话 —— 你一直保持登录；没有另开一个自动化浏览器，也不导出 Cookie。
+• 接管期间 Chrome 会一直显示「DSH Bridge 正在调试此浏览器」的提示条 —— 点上面的「取消」，桥接立刻断开。
+
+使用要求（重要）：
+• macOS。原生助手目前只支持 macOS。
+• 已安装 DSH，并装好配套的 dsh-chrome-bridge 插件（它会装好助手，并为本扩展注册 native messaging）。
+• 助手是一个本地 Node 进程。来源：https://github.com/OrderG-X/dsh-chrome-bridge —— 插件首次加载时会自动装好。
+没有助手时扩展什么也不做：它没有可以对话的对象，并会明确告诉你。
+
+隐私：扩展没有服务器、没有统计，自己也不发任何外部请求。只有当本机的智能体请求时，页面内容才会在你的电脑上被读取，并通过一个权限为 0600 的 Unix socket 交给这个智能体。智能体之后怎么用这些内容 —— 包括发给你在 DSH 里配置的模型服务商 —— 由 DSH 和你自己的设置决定。
+
+完整隐私政策：https://github.com/OrderG-X/dsh-chrome-bridge/blob/main/PRIVACY.md
+源码、问题反馈和助手：https://github.com/OrderG-X/dsh-chrome-bridge
 ```
 
 ## Privacy practices tab

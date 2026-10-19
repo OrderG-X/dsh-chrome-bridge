@@ -169,14 +169,27 @@ print(ok[0]['id'] if ok else '')")
     TMP="$(mktemp -d)"
     trap 'rm -rf "$TMP"' EXIT
     cp -R "$VENDOR/extension/." "$TMP/"
-    # 商店后台的 Summary 直接取包里 manifest 的 description（只读、≤132 字），换成 listing.md 里那句英文
+    # 商店后台的 Summary 直接取包里的 description（只读、≤132 字）。
+    # 中英双语：包里放 _locales/en 和 _locales/zh_CN，description 走 __MSG_extDescription__，
+    # 两句摘要都取自 listing.md；有了 _locales，后台「商品详情」才能加中文（简体）那份。
     node -e '
-      const fs = require("fs"), [p, listing] = process.argv.slice(1);
+      const fs = require("fs"), path = require("path"), [p, listing] = process.argv.slice(1);
       const m = JSON.parse(fs.readFileSync(p, "utf8"));
       delete m.key;
-      const sum = /\*\*Summary\*\*[^\n]*\n+```\n([^\n]+)\n```/.exec(fs.readFileSync(listing, "utf8"));
-      if (!sum || sum[1].length > 132) { console.error("listing.md 里找不到 Summary，或超过 132 字"); process.exit(1) }
-      m.description = sum[1];
+      const text = fs.readFileSync(listing, "utf8");
+      const pick = (label) => {
+        const r = new RegExp("\\*\\*" + label + "\\*\\*[^\\n]*\\n+```\\n([^\\n]+)\\n```").exec(text);
+        if (!r || [...r[1]].length > 132) { console.error(`listing.md 里找不到 ${label}，或超过 132 字`); process.exit(1) }
+        return r[1];
+      };
+      const sums = { en: pick("Summary"), zh_CN: pick("Summary \\(zh_CN\\)") };
+      for (const [loc, msg] of Object.entries(sums)) {
+        const dir = path.join(path.dirname(p), "_locales", loc);
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, "messages.json"), JSON.stringify({ extDescription: { message: msg } }, null, 2) + "\n");
+      }
+      m.default_locale = "en";
+      m.description = "__MSG_extDescription__";
       fs.writeFileSync(p, JSON.stringify(m, null, 2) + "\n");
     ' "$TMP/manifest.json" "$REPO/store/listing.md" || exit 1
     mkdir -p "$REPO/dist"
