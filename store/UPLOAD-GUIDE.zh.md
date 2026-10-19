@@ -1,6 +1,6 @@
 # 上架 Chrome 应用商店 —— 照着点就行（2026-10-18 更新）
 
-> **状态：已过审上线**（2026-10-19，商店上是扩展 v1.10.0；v1.11.0 的包已打好待上传）。商店页：<https://chromewebstore.google.com/detail/bippcbbbipppmhjkjomgdnjbooecbimo>。
+> **状态：已过审上线**（2026-10-19，商店上是扩展 v1.10.0；同日已提交 v1.11.0 中英双语包审核）。商店页：<https://chromewebstore.google.com/detail/bippcbbbipppmhjkjomgdnjbooecbimo>。
 > 之前：2026-10-18 建条目提交审核。商店 item ID `bippcbbbipppmhjkjomgdnjbooecbimo`，已写进 `STORE_EXT_IDS` 和 `install.sh`。
 > 包用 `./bridge store-pack` 重新生成（拿到商店的 item ID 后，填进 `plugin/setup.js` 的 `STORE_EXT_IDS` 再发一版插件）。
 > 没上架期间，安装走「引导式手动」：插件会用后台标签页打开 `chrome://extensions` 并把扩展目录放进剪贴板，用户 ⌘⇧G ⌘V 回车即可；`./bridge setup` 是同一套的命令行版。
