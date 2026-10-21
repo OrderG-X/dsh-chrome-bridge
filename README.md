@@ -52,7 +52,7 @@ DSH's agent  (provided by the harness — this repo ships none)
   ├── browser_* tools  (DSH plugin)  ─┐
   └── cb CLI           (shell)       ─┤
                                       ▼
-                     Unix socket  /tmp/dsh-bridge.sock   (0600 + token)
+                     Unix socket  /tmp/dsh-bridge-<uid>/   (0700 dir + token)
                                       ▼
                      Node native host  ←─ native messaging (stdio) ─→  Chrome extension (MV3)
                                                                             │ chrome.debugger

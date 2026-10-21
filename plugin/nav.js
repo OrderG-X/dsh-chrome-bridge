@@ -9,7 +9,8 @@
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 export async function historyNav(call, tabId, action, timeoutMs = 20000) {
-  const ev = async (expression) => (await call('eval', { tabId, expression })).value
+  // 只读的探测不带 userGesture（不白送页面一次「用户激活」）
+  const ev = async (expression) => (await call('eval', { tabId, expression, userGesture: false })).value
   const before = await ev('(window.__dshNavMark = Date.now(), location.href)')
 
   if (action === 'reload') {
@@ -62,7 +63,7 @@ export async function waitUntil(call, tabId, { selector, text, url, gone = false
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
     try {
-      if ((await call('eval', { tabId, expression })).value) {
+      if ((await call('eval', { tabId, expression, userGesture: false })).value) {
         return `${gone ? '已经没有' : '等到了'} ${what}，用了 ${Date.now() - start}ms`
       }
     } catch {

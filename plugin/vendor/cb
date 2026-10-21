@@ -42,8 +42,18 @@ import path from 'node:path'
 import os from 'node:os'
 import crypto from 'node:crypto'
 
-const SOCK = process.env.DSH_BRIDGE_SOCK || '/tmp/dsh-bridge.sock'
-const TOKEN_FILE = process.env.DSH_BRIDGE_TOKEN || '/tmp/dsh-bridge.token'
+// 和宿主同一个约定：只有当前用户进得去的 /tmp/dsh-bridge-<uid>/
+const DIR = process.env.DSH_BRIDGE_DIR || `/tmp/dsh-bridge-${process.getuid()}`
+const SOCK = process.env.DSH_BRIDGE_SOCK || path.join(DIR, 'dsh-bridge.sock')
+const TOKEN_FILE = process.env.DSH_BRIDGE_TOKEN || path.join(DIR, 'dsh-bridge.token')
+
+/** socket 所在目录必须是自己的、别人进不去：不然连上的可能是别人摆的假宿主（会把要打的字、要跑的 JS 都交出去） */
+function checkDir(dir) {
+  const st = fs.lstatSync(dir)
+  if (!st.isDirectory() || st.uid !== process.getuid() || (st.mode & 0o077)) {
+    throw new Error(`${dir} 不是只属于当前用户的目录，拒绝连接`)
+  }
+}
 
 const argv = process.argv.slice(2)
 const JSON_OUT = argv.includes('--json')
@@ -69,19 +79,56 @@ function readToken() {
   try { return fs.readFileSync(TOKEN_FILE, 'utf8').trim() } catch { return null }
 }
 
-function call(op, args = {}) {
+// 换目录之前的宿主只在这儿听：升级后 Chrome 没重启，它就还活着
+const LEGACY_SOCK = '/tmp/dsh-bridge.sock'
+const LEGACY_TOKEN = '/tmp/dsh-bridge.token'
+
+/**
+ * 老宿主还在老地方听、而且确实是自己的：请它让扩展重载一次（只发 reload），扩展重连时 Chrome 会拉起
+ * 新宿主（新目录）。发出去了返回 true。
+ */
+function nudgeLegacyHost() {
+  return new Promise((resolve) => {
+    try {
+      const st = fs.lstatSync(LEGACY_SOCK)
+      const tk = fs.lstatSync(LEGACY_TOKEN)
+      const uid = process.getuid()
+      if (!st.isSocket() || !tk.isFile() || st.uid !== uid || tk.uid !== uid) return resolve(false)
+      const token = fs.readFileSync(LEGACY_TOKEN, 'utf8').trim()
+      const s = net.connect(LEGACY_SOCK)
+      let sent = false
+      const end = () => { clearTimeout(timer); s.destroy(); resolve(sent) }
+      const timer = setTimeout(end, 3000)
+      s.on('connect', () => { sent = true; s.write(JSON.stringify({ token, id: crypto.randomUUID(), op: 'reload', args: {} }) + '\n') })
+      s.on('data', end)
+      s.on('error', end)
+      s.on('close', end)
+    } catch { resolve(false) }
+  })
+}
+
+async function call(op, args = {}, timeoutMs = 60000) {
+  if (!fs.existsSync(SOCK) && !process.env.DSH_BRIDGE_SOCK && await nudgeLegacyHost()) {
+    // 扩展重载 + 新宿主起来一般一两秒；最多等 10 秒
+    for (let i = 0; i < 40 && !fs.existsSync(SOCK); i++) await new Promise((r) => setTimeout(r, 250))
+    if (op === 'reload' && fs.existsSync(SOCK)) return { reloading: true }   // 刚才那下就是重载，不用再来一次
+  }
   return new Promise((resolve, reject) => {
-    const token = readToken()
     if (!fs.existsSync(SOCK)) {
+      if (fs.existsSync(LEGACY_SOCK)) {
+        return reject(new Error(`宿主没在跑（找不到 ${SOCK}）。老版宿主还占着 ${LEGACY_SOCK}、叫不醒：重启一次 Chrome`))
+      }
       return reject(new Error(`宿主没在跑（找不到 ${SOCK}）。Chrome 开着吗？扩展装了吗？`))
     }
+    try { checkDir(path.dirname(SOCK)) } catch (e) { return reject(e) }
+    const token = readToken()
     const id = crypto.randomUUID()
     const sock = net.connect(SOCK)
     let acc = ''
     let done = false
     const finish = (fn, v) => { if (!done) { done = true; try { sock.destroy() } catch {}; fn(v) } }
     sock.setEncoding('utf8')
-    sock.on('connect', () => sock.write(JSON.stringify({ token, id, op, args }) + '\n'))
+    sock.on('connect', () => sock.write(JSON.stringify({ token, id, op, args, timeoutMs }) + '\n'))
     sock.on('data', (d) => {
       acc += d
       const i = acc.indexOf('\n')
@@ -93,7 +140,7 @@ function call(op, args = {}) {
     })
     sock.on('error', (e) => finish(reject, new Error(`连不上宿主：${e.message}`)))
     sock.on('close', () => finish(reject, new Error('宿主连接被关掉了')))
-    setTimeout(() => finish(reject, new Error('等宿主超时（60s）')), 60000)
+    setTimeout(() => finish(reject, new Error(`等宿主超时（${Math.round(timeoutMs / 1000)}s）`)), timeoutMs)
   })
 }
 
@@ -281,7 +328,8 @@ async function main() {
       const [tabSpec, sel] = rest
       if (!sel) die('用法: cb wait-for <tab> <选择器> [--timeout 15000]')
       const tabId = await resolveTab(tabSpec)
-      const r = await call('waitFor', { tabId, selector: sel, timeoutMs: Number(flags.timeout || 15000), visible: !flags.any })
+      const ms = Number(flags.timeout || 15000)
+      const r = await call('waitFor', { tabId, selector: sel, timeoutMs: ms, visible: !flags.any }, ms + 15000)
       out(`等到了 ${sel} @ (${r.x}, ${r.y})「${r.text}」用了 ${r.waitedMs}ms`, r)
       return
     }
@@ -341,7 +389,7 @@ async function main() {
         quality: flags.quality ? Number(flags.quality) : undefined,
         full: !!flags.full,
         selector: flags.sel || undefined,
-      })
+      }, 90000)
       const file = String(flags.out || `/tmp/dsh-shot-${Date.now()}.${format === 'jpeg' ? 'jpg' : 'png'}`)
       fs.writeFileSync(file, Buffer.from(r.data, 'base64'))
       out(file, { file, format, url: r.url, title: r.title, bytes: fs.statSync(file).size, full: r.full, clip: r.clip })

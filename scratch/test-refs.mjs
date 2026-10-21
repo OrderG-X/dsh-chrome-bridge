@@ -4,7 +4,7 @@
  *
  *   node scratch/test-refs.mjs
  *
- * 要求：Chrome 开着、扩展已加载（/tmp/dsh-bridge.sock 存在）。
+ * 要求：Chrome 开着、扩展已加载（/tmp/dsh-bridge-<uid>/dsh-bridge.sock 存在）。
  */
 
 import assert from 'node:assert'
@@ -112,6 +112,11 @@ try {
   await check('双击（ref + count=2）', async () => {
     await run('browser_click', { tab, ref: ref('clickable "双击我"'), count: 2 })
     assert.equal(await ev('String(window.dblHit)'), '1')
+  })
+
+  await check('密码框按编号双击：明文不进工具结果', async () => {
+    const t = await run('browser_click', { tab, ref: ref('textbox "密码"'), count: 2 })
+    assert.doesNotMatch(t, /secret/, t)
   })
 
   await check('shadow DOM 里的按钮', async () => {

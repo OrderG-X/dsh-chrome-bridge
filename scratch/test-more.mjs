@@ -4,7 +4,7 @@
  *
  *   node scratch/test-more.mjs
  *
- * 要求：Chrome 开着、扩展已加载（/tmp/dsh-bridge.sock 存在）。
+ * 要求：Chrome 开着、扩展已加载（/tmp/dsh-bridge-<uid>/dsh-bridge.sock 存在）。
  */
 
 import assert from 'node:assert'

@@ -75,6 +75,7 @@ try {
   process.env.HOME = fakeHome
   process.env.DSH_BRIDGE_SOCK = sock
   process.env.DSH_BRIDGE_TOKEN = path.join(fakeHome, 'token')
+  process.env.DSH_BRIDGE_DIR = fakeHome   // 插件的 trace 日志也落进假 HOME
   let answer = null
   const ops = []
   const server = net.createServer((c) => {

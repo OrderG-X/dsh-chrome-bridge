@@ -199,8 +199,9 @@ const LOCATE_JS = (ref, wantPoint) => `(async () => {
     shadow = true;
   }
   if (!el || !el.isConnected) return { gone: true };
+  // 密码框的 value 绝不拿出来（会进工具结果、上光标名牌）
   const out = { shadow, selector: shadow ? null : sel, tag: el.tagName.toLowerCase(),
-    text: (el.innerText || el.value || el.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').trim().slice(0, 60) };
+    text: (el.innerText || (el.type === 'password' ? '' : el.value) || el.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').trim().slice(0, 60) };
   if (!${wantPoint ? 'true' : 'false'} && !shadow) return out;
   return { ...out, ...(await ${BOX_FN}(el)) };
 })()`
@@ -229,7 +230,7 @@ const goneError = (ref) =>
  * @param call  与宿主通话的函数（index.js 的 call）
  */
 export async function snapshot(call, tabId, { selector, limit = 8000, maxItems = 300 } = {}) {
-  const r = await call('eval', { tabId, expression: SNAPSHOT_JS(selector, maxItems) })
+  const r = await call('eval', { tabId, expression: SNAPSHOT_JS(selector, maxItems), userGesture: false })
   const v = r.value
   if (!v) throw new Error('页面没返回快照（可能刚跳转，重试一次）')
   if (v.error === 'scope') throw new Error(`没找到元素: ${selector}`)
@@ -253,7 +254,7 @@ export async function snapshot(call, tabId, { selector, limit = 8000, maxItems =
 export async function locate(call, tabId, ref, { wantPoint = false } = {}) {
   const n = Number(ref)
   if (!Number.isInteger(n) || n < 1) throw new Error(`编号要是正整数，收到的是 ${ref}`)
-  const r = await call('eval', { tabId, expression: LOCATE_JS(n, wantPoint) })
+  const r = await call('eval', { tabId, expression: LOCATE_JS(n, wantPoint), userGesture: false })
   const v = r.value
   if (!v || v.gone) throw goneError(n)
   return v
@@ -274,6 +275,7 @@ export async function elementBox(call, tabId, { ref, selector }) {
       const el = document.querySelector(${JSON.stringify(selector)});
       return el ? (await ${BOX_FN}(el)).box : null;
     })()`,
+    userGesture: false,
   })
   if (!r.value) throw new Error(`没找到元素: ${selector}`)
   return r.value

@@ -21,6 +21,8 @@ VENDOR="$REPO/plugin/vendor"
 EXT_DIR="$HOME/dsh-bridge-extension"
 BRIDGE="$HOME/.dsh/chrome-bridge"
 CB="$HOME/.dsh/bin/cb"
+# 宿主的 socket / token / 日志都在这个只有当前用户进得去的目录里（和 host.js、cb、插件同一个约定）
+RUN_DIR="/tmp/dsh-bridge-$(id -u)"
 
 manifest_ver() { node -e 'console.log(require(process.argv[1]).version)' "$1" 2>/dev/null || echo "${2:-?}"; }
 repo_ver() { manifest_ver "$VENDOR/extension/manifest.json"; }
@@ -40,7 +42,9 @@ case "${1:-help}" in
       const r = m.ensureInstalled()
       console.log(r.ok ? "① 宿主与 native 注册已就位" : "① 自动安装没成：" + r.reason)
     })' "$REPO/plugin/setup.js"
-    if [ -S /tmp/dsh-bridge.sock ]; then
+    # 升级前的老宿主还在 /tmp/dsh-bridge.sock 上听（Chrome 没重启）：cb 会请它让扩展重载、换成新宿主
+    [ -S "$RUN_DIR/dsh-bridge.sock" ] || [ ! -S /tmp/dsh-bridge.sock ] || "$CB" version >/dev/null 2>&1
+    if [ -S "$RUN_DIR/dsh-bridge.sock" ]; then
       echo "② 扩展已连上 —— 不用再点任何东西 ✅"
       "$CB" status
       exit 0
@@ -61,10 +65,13 @@ case "${1:-help}" in
     echo "   · 点左上「加载已解压的扩展程序」"
     echo "   · 文件框里：⌘⇧G → ⌘V（路径已在剪贴板）→ 回车 → 回车"
     echo "     文件夹：$EXT_DIR"
+    if [ -S /tmp/dsh-bridge.sock ]; then
+      echo "   · 已经装过扩展的话不用重装：老版宿主还占着 /tmp/dsh-bridge.sock、叫不醒，重启一次 Chrome 就行"
+    fi
     echo
     echo "我在这儿等（最多 3 分钟，⌃C 可退出）…"
     for _ in $(seq 1 180); do
-      if [ -S /tmp/dsh-bridge.sock ]; then
+      if [ -S "$RUN_DIR/dsh-bridge.sock" ]; then
         echo
         echo "✅ 搞定，扩展连上了："
         "$CB" status
@@ -90,7 +97,8 @@ case "${1:-help}" in
     cp "$VENDOR/skill/SKILL.md" "$HOME/.dsh/skills/browser/SKILL.md"
     chmod +x "$CB" "$BRIDGE/host/run.sh"
     echo "热重载扩展（v$(repo_ver)）…"
-    "$CB" reload 2>/dev/null || echo "  扩展没在跑，下次打开 Chrome 自动加载新代码"
+    # cb 找不到新宿主时会先叫醒升级前的老宿主（/tmp/dsh-bridge.sock）；叫不醒就只能重启 Chrome
+    "$CB" reload 2>/dev/null || echo "  扩展没在跑，下次打开 Chrome 自动加载新代码（Chrome 一直开着的话，重启一次）"
     sleep 1.5
     "$CB" version 2>/dev/null || true
     ;;
@@ -111,7 +119,7 @@ case "${1:-help}" in
     "$CB" logs --limit 40 2>/dev/null || echo "(拿不到)"
     echo
     echo "── 宿主日志（最近 20 行）──"
-    tail -20 /tmp/dsh-bridge.log 2>/dev/null || echo "(没有)"
+    tail -20 "$RUN_DIR/dsh-bridge.log" 2>/dev/null || echo "(没有)"
     ;;
 
   test)

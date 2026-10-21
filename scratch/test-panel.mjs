@@ -5,7 +5,8 @@
  *   node scratch/test-panel.mjs
  *
  * 要求：Chrome 开着、扩展 ≥1.11.0 已加载（有 panel 操作）。
- * 测完一定恢复：不暂停、光标开着（暂停只能从扩展页里解除，所以开一个扩展弹窗页来解）。
+ * 测完一定恢复：不暂停、光标开着。暂停只能在 Chrome 工具栏的 DSH Bridge 弹窗里亲手解除
+ * （扩展页面不让自动化碰），测到那一步脚本会停下来等你点。
  */
 
 import assert from 'node:assert'
@@ -14,8 +15,8 @@ import net from 'node:net'
 import http from 'node:http'
 import { panelHandler, PANEL_ROUTE } from '../plugin/panel.js'
 
-const EXT_ID = 'mhlkjkblmdleplggfengldbdmkabloce'
-const SOCK = '/tmp/dsh-bridge.sock'
+const RUN = process.env.DSH_BRIDGE_DIR || `/tmp/dsh-bridge-${process.getuid()}`
+const SOCK = `${RUN}/dsh-bridge.sock`
 const WANT = JSON.parse(fs.readFileSync(new URL('../plugin/vendor/extension/manifest.json', import.meta.url), 'utf8')).version
 
 const call = (op, args = {}, timeoutMs = 10000) => new Promise((resolve, reject) => {
@@ -23,7 +24,7 @@ const call = (op, args = {}, timeoutMs = 10000) => new Promise((resolve, reject)
   let acc = ''
   const timer = setTimeout(() => { s.destroy(); reject(new Error('timeout')) }, timeoutMs)
   s.on('connect', () => s.write(JSON.stringify({
-    token: fs.readFileSync('/tmp/dsh-bridge.token', 'utf8').trim(), id: String(Math.random()), op, args,
+    token: fs.readFileSync(`${RUN}/dsh-bridge.token`, 'utf8').trim(), id: String(Math.random()), op, args,
   }) + '\n'))
   s.on('data', (d) => {
     acc += d
@@ -61,10 +62,7 @@ const check = async (name, fn) => {
   try { await fn(); results.push(`✓ ${name}`) } catch (e) { results.push(`❌ ${name}: ${e.message}`) }
 }
 
-let pop
 try {
-  pop = (await call('open', { url: `chrome-extension://${EXT_ID}/popup.html` })).tabId
-
   await check('读状态：连上了、版本对、两个开关', async () => {
     const { status, body } = await req('GET')
     assert.equal(status, 200)
@@ -93,10 +91,13 @@ try {
     await assert.rejects(call('panel', { action: 'pause', on: false }), /只能在 Chrome/)
   })
 
-  await check('从扩展页解除暂停后，状态回来', async () => {
-    await call('cdp', { tabId: pop, method: 'Runtime.evaluate', params: { expression: "chrome.runtime.sendMessage({ popup: 'pause', on: false })", awaitPromise: true } })
-    const r = await req('GET')
-    assert.equal(r.body.paused, false)
+  await check('在工具栏弹窗里亲手解除暂停后，状态回来', async () => {
+    console.log('\n👉 现在请点 Chrome 工具栏上的 DSH Bridge 图标，打开「允许 DSH 控制」（最多等 3 分钟）…')
+    const deadline = Date.now() + 180_000
+    while ((await req('GET')).body.paused) {
+      if (Date.now() > deadline) throw new Error('3 分钟内没等到恢复')
+      await new Promise((r) => setTimeout(r, 1000))
+    }
   })
 
   await check('全部松手', async () => {
@@ -132,12 +133,10 @@ try {
     assert.equal((await req('POST', { action: 'resume' })).status, 400)
   })
 } finally {
-  // 不管中途怎样，恢复成：不暂停、光标开着
-  if (pop) {
-    await call('cdp', { tabId: pop, method: 'Runtime.evaluate', params: { expression: "chrome.runtime.sendMessage({ popup: 'pause', on: false })", awaitPromise: true } }).catch(() => {})
-    await call('cdp', { tabId: pop, method: 'Runtime.evaluate', params: { expression: "chrome.runtime.sendMessage({ popup: 'cursor', on: true })", awaitPromise: true } }).catch(() => {})
-    await call('close', { tabId: pop }).catch(() => {})
-  }
+  // 不管中途怎样，恢复成光标开着；暂停只能你自己在工具栏弹窗里解，没解开就提醒一声
+  await call('panel', { action: 'cursor', on: true }).catch(() => {})
+  const st = await call('panel', {}).catch(() => null)
+  if (st && st.paused) console.log('\n⚠️ 浏览器控制还停在「暂停」：点 Chrome 工具栏的 DSH Bridge 图标打开「允许 DSH 控制」')
   server.close()
 }
 

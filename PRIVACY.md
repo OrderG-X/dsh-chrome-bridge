@@ -17,7 +17,7 @@ It reads these **only while a local agent (DSH) asks it to**, over Chrome's nati
 ## Where the data goes
 
 1. Chrome → native host: over Chrome's native messaging pipe (stdio). **Local only.**
-2. Native host → your DSH agent: over a Unix socket (`/tmp/dsh-bridge.sock`, mode `0600`, plus a token file). **Local only.**
+2. Native host → your DSH agent: over a Unix socket (`/tmp/dsh-bridge-<uid>/dsh-bridge.sock`, inside a per-user `0700` directory, plus a token file). **Local only.**
 3. What your DSH agent then does with that content — including sending it to whichever model provider you configured in DSH — is decided by **DSH and your own configuration, not by this extension**. Please read DSH's own privacy terms for that.
 
 The extension itself makes no outbound requests: no telemetry, no update pings, no third-party scripts. All code is in this repository; the extension loads no remote code.
@@ -25,7 +25,7 @@ The extension itself makes no outbound requests: no telemetry, no update pings, 
 ## What is stored
 
 - The extension keeps a small amount of local state (`chrome.storage`) for its own settings.
-- The native host writes nothing to disk except its own log (`/tmp/dsh-bridge.log`) and the socket/token files listed above.
+- The native host writes nothing to disk except its own log (`/tmp/dsh-bridge-<uid>/dsh-bridge.log`) and the socket/token files listed above; the DSH plugin keeps its own trace log (`plugin.log`) in the same directory.
 - Uninstalling the extension and running `./bridge uninstall` (or `install.sh --uninstall`) removes all of it.
 
 ## Permissions and why they are needed
@@ -38,7 +38,7 @@ The extension itself makes no outbound requests: no telemetry, no update pings, 
 | `scripting` | Injects two page-side things into the tab the agent is working on: the on-page cursor overlay, and a temporary favicon link so the tab strip shows a small mouse while that cursor is present. Nothing is injected into any other tab. |
 | `nativeMessaging` | The only channel to the local helper process. |
 | `alarms`, `storage` | Keeps the service worker alive while attached and stores local settings. |
-| `<all_urls>` (host permission + content script) | The agent works on whatever page you point it at, and the page-side cursor overlay must be able to draw on any page. |
+| `<all_urls>` (host permission) | The agent works on whatever page you point it at, and the page-side cursor overlay must be able to draw on any page. |
 
 ## Control and revocation
 

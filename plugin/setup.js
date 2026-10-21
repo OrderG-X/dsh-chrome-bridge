@@ -99,6 +99,16 @@ function vendorStamp(dir) {
   return hash.digest('hex')
 }
 
+/** 落盘目录里文件还都在吗（用户可能手动删过）：缺了就算指纹没变也要重拷 */
+function allPresent(src, dest) {
+  for (const name of fs.readdirSync(src)) {
+    const s = path.join(src, name)
+    const d = path.join(dest, name)
+    if (fs.statSync(s).isDirectory() ? !allPresent(s, d) : !fs.existsSync(d)) return false
+  }
+  return true
+}
+
 /**
  * Chrome 里有没有装商店版扩展：商店扩展落在 <profile>/Extensions/<id>/<版本>_0/，
  * 「加载已解压」的不在这里（只记在 Preferences 里）。只用来挑报错文案 —— 装没装好，
@@ -175,7 +185,7 @@ export function ensureInstalled(options = {}) {
 
     let nmPrev = null
     try { nmPrev = fs.readFileSync(p.nmFile, 'utf8') } catch {}
-    const upToDate = prev === stamp && nmPrev === nmBody
+    const upToDate = prev === stamp && nmPrev === nmBody && allPresent(vExt, p.extDir) && allPresent(vHost, p.hostDir)
     if (!upToDate) {
       fs.mkdirSync(p.extDir, { recursive: true })
       fs.cpSync(vExt, p.extDir, { recursive: true, force: true })
@@ -193,8 +203,11 @@ export function ensureInstalled(options = {}) {
     try {
       copyFile(path.join(vendor, 'cb'), p.cb, 0o755)
       fs.mkdirSync(path.dirname(p.cbLink), { recursive: true })
-      try { fs.rmSync(p.cbLink) } catch {}
-      fs.symlinkSync(p.cb, p.cbLink)
+      // ~/.local/bin/cb 可能是用户自己的另一个 cb：只在还没有时建链接；指向我们的链接本来就对，
+      // 别的东西（用户自己的文件 / 指向别处的链接）一律不碰
+      let cur = null
+      try { cur = fs.lstatSync(p.cbLink) } catch {}
+      if (!cur) fs.symlinkSync(p.cb, p.cbLink)
     } catch {}
     try {
       copyFile(path.join(vendor, 'in-page-cursor.js'), p.cursorFile)

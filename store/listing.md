@@ -148,10 +148,6 @@ Stores the extension's own small local settings (for example whether the on-page
 ```
 The agent works on whatever page the user points it at, and the on-page cursor overlay must be able to draw on any page. The extension reads a page only while the user's own local agent is operating on it.
 ```
-- Content script `<all_urls>` (MAIN world, document_start):
-```
-The content script only patches automation-detection fingerprints (navigator.webdriver and similar) so ordinary sites do not misbehave when a page is driven by the user's own agent. It collects nothing and sends nothing anywhere.
-```
 
 **Remote code** — answer **No** (all code ships in the package; nothing is fetched or eval'd).
 

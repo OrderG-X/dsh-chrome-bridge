@@ -52,7 +52,7 @@ DSH 的 agent（harness 自带，本仓库不提供）
   ├── browser_* 原生工具（DSH 插件） ─┐
   └── cb CLI          （命令行）     ─┤
                                      ▼
-                    Unix socket  /tmp/dsh-bridge.sock   (0600 + token)
+                    Unix socket  /tmp/dsh-bridge-<uid>/   (0700 目录 + token)
                                      ▼
                     Node 原生宿主  ←─ native messaging (stdio) ─→  Chrome 扩展 (MV3)
                                                                         │ chrome.debugger

@@ -34,9 +34,36 @@ import { drag } from './drag.js'
  *   output     —— { schema, render }，schema 直接写成 JSON Schema
  */
 
-const TRACE = '/tmp/dsh-browser-bridge.log'
+// socket / token / 日志都在只有当前用户进得去的 /tmp/dsh-bridge-<uid>/（和宿主、cb 同一个约定）：
+// /tmp 人人可写，固定文件名会被别的用户抢先占位，或者用软链接把写入引到别处
+const UID = typeof process.getuid === 'function' ? process.getuid() : null
+const DIR = process.env.DSH_BRIDGE_DIR || `/tmp/dsh-bridge-${UID ?? 'user'}`
+const SOCK = process.env.DSH_BRIDGE_SOCK || path.join(DIR, 'dsh-bridge.sock')
+const TOKEN_FILE = process.env.DSH_BRIDGE_TOKEN || path.join(DIR, 'dsh-bridge.token')
+const TRACE = path.join(DIR, 'plugin.log')
+const { O_WRONLY, O_CREAT, O_APPEND, O_NOFOLLOW } = fs.constants
+
+/** 目录必须是自己的真目录（不是软链接）、别人进不去：不然连上的可能是别人摆的假宿主 */
+function checkDir(dir) {
+  const st = fs.lstatSync(dir)
+  if (!st.isDirectory() || (UID !== null && st.uid !== UID) || (st.mode & 0o077)) {
+    throw new Error(`${dir} 不是只属于当前用户的目录，拒绝使用`)
+  }
+}
+
+let traceOk = null
 function trace(line) {
-  try { fs.appendFileSync(TRACE, `${new Date().toISOString()} ${line}\n`) } catch {}
+  try {
+    if (traceOk === null) {
+      traceOk = false
+      try { fs.mkdirSync(DIR, { mode: 0o700 }) } catch {}
+      checkDir(DIR)
+      traceOk = true
+    }
+    if (traceOk) {
+      fs.appendFileSync(TRACE, `${new Date().toISOString()} ${line}\n`, { flag: O_WRONLY | O_CREAT | O_APPEND | O_NOFOLLOW, mode: 0o600 })
+    }
+  } catch {}
 }
 
 /** 属性表 → JSON Schema：{ [name]: { type, required?, description?, ... } } */
@@ -99,7 +126,8 @@ function hintOf(name, a = {}) {
     case 'browser_read': return [a.what, a.selector ? short(a.selector, 30) : ''].filter(Boolean).join(' ')
     case 'browser_click': return el()
     case 'browser_input':
-      return a.action === 'type' ? `打字「${short(a.text, 16)}」${a.ref != null || a.selector ? ` → ${el()}` : ''}`
+      // 只记字数：这句会显示在扩展弹窗的「最近动作」里，打的可能是密码
+      return a.action === 'type' ? `打字 ${String(a.text ?? '').length} 字${a.ref != null || a.selector ? ` → ${el()}` : ''}`
         : a.action === 'key' ? `按键 ${a.key || ''}`
           : `${a.action} ${el()}`.trim()
     case 'browser_nav': return (a.action && a.action !== 'go') ? a.action : short(a.url, 50)
@@ -141,9 +169,6 @@ function defineTool(options) {
 export const name = 'browser-bridge'
 export const inject = ['tools']
 
-const SOCK = process.env.DSH_BRIDGE_SOCK || '/tmp/dsh-bridge.sock'
-const TOKEN_FILE = process.env.DSH_BRIDGE_TOKEN || '/tmp/dsh-bridge.token'
-
 /**
  * 第一次发现宿主连不上时，做一次「引导」：把扩展目录塞进剪贴板、后台打开
  * chrome://extensions（见 setup.js 的 assistInstall）。每个进程只做一次。
@@ -174,11 +199,12 @@ const HINT = () => installHint() + firstAid()
 /** 一次请求一个连接，协议是换行分隔的 JSON（和 cb CLI 完全一致）。 */
 function call(op, args = {}, timeoutMs = 60000) {
   return new Promise((resolve, reject) => {
-    let token = null
-    try { token = fs.readFileSync(TOKEN_FILE, 'utf8').trim() } catch {}
     if (!fs.existsSync(SOCK)) {
       return reject(new Error(`浏览器桥没在跑（找不到 ${SOCK}）：Chrome 没开，或扩展还没加载。\n${HINT()}`))
     }
+    try { checkDir(path.dirname(SOCK)) } catch (e) { return reject(e) }
+    let token = null
+    try { token = fs.readFileSync(TOKEN_FILE, 'utf8').trim() } catch {}
     const id = crypto.randomUUID()
     const sock = net.connect(SOCK)
     let acc = ''
@@ -193,7 +219,8 @@ function call(op, args = {}, timeoutMs = 60000) {
     }
     sock.setEncoding('utf8')
     const client = callInfo.getStore() || BASE_CLIENT
-    sock.on('connect', () => sock.write(JSON.stringify({ token, id, op, args, client }) + '\n'))
+    // timeoutMs 也带给宿主：它按这个等扩展，不再一律 45 秒（等元素、截图这类慢操作以前必定被它掐掉）
+    sock.on('connect', () => sock.write(JSON.stringify({ token, id, op, args, client, timeoutMs }) + '\n'))
     sock.on('data', (d) => {
       acc += d
       const i = acc.indexOf('\n')
@@ -209,13 +236,41 @@ function call(op, args = {}, timeoutMs = 60000) {
   })
 }
 
-/** tab 参数：数字 id 或 'active'（省略时按 active 处理）。 */
+/**
+ * 每个会话「正在用的标签页」：它自己打开的，或者它点名操作过的。不传 tab 时就接着用它；
+ * 一个都没有就报错 —— 绝不默认去动用户正在看的标签页（以前省略等于 active：模型没传 tab，
+ * 就把用户正在编辑的页面跳走了）。明确传 "active" 照旧：那是模型按用户的话有意要动当前页。
+ */
+const currentTab = new Map() // 会话 → 标签页 id
+const sessionKey = () => (callInfo.getStore() || {}).session || 'default'
+const rememberTab = (id) => currentTab.set(sessionKey(), Number(id))
+
+/** 标签页关掉了：谁正在用它，谁就忘掉它 */
+function forgetTab(id) {
+  for (const [k, v] of currentTab) if (v === Number(id)) currentTab.delete(k)
+}
+
 async function resolveTab(tab) {
-  if (tab !== undefined && tab !== null && tab !== '' && String(tab) !== 'active') return Number(tab)
-  const tabs = await call('tabs')
-  const active = tabs.find((t) => t.active)
-  if (!active) throw new Error('没有活动标签页')
-  return active.id
+  if (tab !== undefined && tab !== null && tab !== '') {
+    if (String(tab) === 'active') {
+      const active = (await call('tabs')).find((t) => t.active)
+      if (!active) throw new Error('没有活动标签页')
+      rememberTab(active.id)
+      return active.id
+    }
+    const id = Number(tab)
+    if (!Number.isInteger(id)) throw new Error(`tab 要是标签页 id（数字）或 "active"，收到的是「${tab}」`)
+    rememberTab(id)
+    return id
+  }
+  const id = currentTab.get(sessionKey())
+  if (id !== undefined) {
+    if ((await call('tabs')).some((t) => t.id === id)) return id
+    currentTab.delete(sessionKey())
+  }
+  throw new Error(
+    '没指定标签页（tab）。先用 browser_tabs 打开（open）或找到（list / find）要操作的页面，再把 id 传给 tab；' +
+    '要操作用户正在看的那一页就明确传 tab="active"。不传 tab 时只会接着用你自己打开或点名操作过的标签页，不会去动用户正在看的页面')
 }
 
 /**
@@ -233,6 +288,27 @@ async function emulateFocus(tabId) {
 }
 
 /**
+ * 换目录之前的宿主只在 /tmp/dsh-bridge.sock 听：插件升级后它要是还活着，新插件就找不到宿主。
+ * 只要那个 socket 确实是自己的，就请它让扩展重载一次 —— 扩展重连时 Chrome 会拉起新宿主（新目录）。
+ * 只发 reload，不发别的。
+ */
+function nudgeLegacyHost() {
+  try {
+    const legacy = '/tmp/dsh-bridge.sock'
+    const tokenFile = '/tmp/dsh-bridge.token'
+    const st = fs.lstatSync(legacy)
+    const tk = fs.lstatSync(tokenFile)
+    if (!st.isSocket() || !tk.isFile() || (UID !== null && (st.uid !== UID || tk.uid !== UID))) return
+    const token = fs.readFileSync(tokenFile, 'utf8').trim()
+    const s = net.connect(legacy)
+    s.on('connect', () => s.end(JSON.stringify({ token, id: crypto.randomUUID(), op: 'reload', args: {} }) + '\n'))
+    s.on('error', () => {})
+    setTimeout(() => s.destroy(), 3000).unref()
+    trace('旧宿主还在老地方听：已请扩展重载，换成新宿主')
+  } catch {}
+}
+
+/**
  * 扩展是「已解压」加载的：setup 把新文件拷进扩展目录后，Chrome 不会自己重载，跑的还是旧代码。
  * 所以插件启动时对一下版本号，对不上就让扩展自己 chrome.runtime.reload()（一秒内带着新代码回来）。
  *
@@ -240,7 +316,10 @@ async function emulateFocus(tabId) {
  * reload 只会白白掐断宿主一下；而商店版本号常常落后本地，不跳过就会每次启动都重载。
  */
 async function refreshExtension() {
-  if (!fs.existsSync(SOCK)) return
+  if (!fs.existsSync(SOCK)) {
+    if (!process.env.DSH_BRIDGE_SOCK) nudgeLegacyHost()
+    return
+  }
   let want, localId
   try {
     const manifestFile = path.join(paths().extDir, 'manifest.json')
@@ -285,6 +364,49 @@ const withCursor = (extra = {}) => {
 
 const clip = (s, n = 6000) => (s.length > n ? s.slice(0, n) + `\n…（截断，全文 ${s.length} 字）` : s)
 
+/** DSH 的会话投影服务（读会话现在的工作目录用）；apply 里 inject 到了才有 */
+let projections = null
+
+/**
+ * 会话现在的工作目录：先看 DSH 的 workingDirectory 投影（会话里切过目录就是新的），没有再用会话头里
+ * 建会话时的目录。都拿不到返回空串。写法同 dsh-video-preview 的 sessionCwd。
+ */
+function sessionCwd(exec) {
+  const session = exec && exec.agent && exec.agent.session
+  let cwd
+  try {
+    cwd = projections && session && projections.stateOf(session, 'workingDirectory')
+  } catch { /* 没装这个投影 */ }
+  if (typeof cwd !== 'string' || !cwd) cwd = session && session.header && session.header.cwd
+  return typeof cwd === 'string' && path.isAbsolute(cwd) ? cwd : ''
+}
+
+/**
+ * upload 能塞进网页的文件：只限会话工作目录、系统临时目录下的普通文件，路径里任何一段以 . 开头
+ * （~/.ssh、.env 这类隐藏目录/文件）都不行。按 realpath 判断，软链接绕不过去；交给扩展的也是 realpath。
+ */
+function uploadable(files, cwd) {
+  const roots = [cwd, os.tmpdir(), '/tmp'].filter(Boolean)
+    .map((d) => { try { return fs.realpathSync(d) } catch { return null } }).filter(Boolean)
+  const hidden = (p) => p.split(path.sep).some((seg) => seg.startsWith('.'))
+  return files.map((f) => {
+    const raw = String(f)
+    if (!path.isAbsolute(raw) && !cwd) throw new Error(`upload 要给绝对路径：${raw}`)
+    const abs = path.resolve(cwd || '/', raw)
+    let real
+    try { real = fs.realpathSync(abs) } catch { throw new Error(`文件不存在：${raw}`) }
+    if (hidden(abs) || hidden(real)) throw new Error(`不能上传隐藏目录 / 隐藏文件：${raw}`)
+    if (!roots.some((r) => real.startsWith(r + path.sep))) {
+      throw new Error(`只能上传会话工作目录${cwd ? `（${cwd}）` : ''}或系统临时目录下的文件：${raw}`)
+    }
+    if (!fs.statSync(real).isFile()) throw new Error(`不是普通文件：${raw}`)
+    return real
+  })
+}
+
+/** browser_wait 最多等多久：再长就该换个思路（或者分几次等），别把一次工具调用挂几分钟 */
+const WAIT_MAX_MS = 120_000
+
 // ── 工具通用外壳 ────────────────────────────────────────────────────────────
 
 const textOutput = {
@@ -297,7 +419,7 @@ const textOutput = {
   render: (_args, value) => [{ type: 'text', text: value.text }],
 }
 
-const TAB_DESC = '标签页 id（数字），或 "active" 表示当前活动标签页；省略等于 active'
+const TAB_DESC = '标签页 id（数字），或 "active" 表示用户当前正在看的标签页。省略时接着用本会话上次打开或操作过的标签页；还没有就报错，不会默认去动用户正在看的页面'
 const REF_DESC = '元素编号：browser_read(what=snapshot) 列出的 [N]。最稳，有编号就别再猜选择器'
 const present = (title) => (args) => ({ card: 'generic', title, kind: 'other', rawInput: args })
 
@@ -337,6 +459,18 @@ export function apply(ctx, config) {
     trace(`设置页路由没挂上（忽略）: ${e && e.message}`)
   }
 
+  // 会话投影：upload 只放行会话工作目录（和系统临时目录）下的文件，要靠它读工作目录。
+  // 可选的：拿不到就退回会话头里的目录。别直接读 ctx.sessionProjections：没写进 inject 的服务，
+  // DSH（cordis）会直接抛「cannot get property without inject」，整个 apply 就断了
+  projections = null
+  try {
+    if (typeof ctx.inject === 'function') {
+      ctx.inject(['sessionProjections'], (sub) => { if (sub && sub.sessionProjections) projections = sub.sessionProjections })
+    }
+  } catch (e) {
+    trace(`会话投影没拿到（upload 按会话头里的目录算）: ${e && e.message}`)
+  }
+
   const tools = [
     // ── 标签页 ──────────────────────────────────────────────────────────────
     defineTool({
@@ -374,11 +508,13 @@ export function apply(ctx, config) {
           case 'open': {
             if (!args.url) throw new Error('action=open 需要 url')
             const r = await call('open', { url: args.url })
+            rememberTab(r.tabId)
             return { text: `已打开标签页 ${r.tabId}：${r.url}` }
           }
           case 'close': {
             const tabId = await resolveTab(args.tab)
             await call('close', { tabId })
+            forgetTab(tabId)
             return { text: `已关闭标签页 ${tabId}` }
           }
           case 'activate': {
@@ -508,7 +644,7 @@ export function apply(ctx, config) {
         selector: { type: 'string', description: 'CSS 选择器（type 时先点它聚焦；select/upload/focus/hover 要它或 ref）' },
         key: { type: 'string', description: 'action=key 的按键，例如 Enter / Escape / "meta+a" / "ctrl+shift+k"' },
         value: { type: 'string', description: 'action=select 时要选的 value 或选项文字' },
-        files: { type: 'array', items: { type: 'string' }, description: 'action=upload 的本地文件绝对路径' },
+        files: { type: 'array', items: { type: 'string' }, description: 'action=upload 的本地文件绝对路径（只限会话工作目录或系统临时目录下、非隐藏的文件）' },
         dy: { type: 'integer', description: 'action=scroll 的纵向滚动量，默认 600（向下为正）' },
         dx: { type: 'integer', description: 'action=scroll 的横向滚动量，默认 0' },
         x: { type: 'integer', description: 'action=hover 且不用 selector 时的视口 X 坐标' },
@@ -516,7 +652,7 @@ export function apply(ctx, config) {
       },
       output: textOutput,
       presentCall: present('Browser input'),
-      async execute(args) {
+      async execute(args, exec) {
         const tabId = await resolveTab(args.tab)
         if (args.action !== 'scroll') await emulateFocus(tabId)
         // 有编号就先把它换成选择器；shadow DOM 里的元素换不成，下面各自按坐标/页内处理
@@ -555,7 +691,8 @@ export function apply(ctx, config) {
             if (!selector && !el) throw new Error('action=upload 需要 ref 或 selector')
             if (!args.files?.length) throw new Error('action=upload 需要 files')
             noShadow('upload')
-            const r = await call('upload', { tabId, selector, files: args.files })
+            const files = uploadable(args.files, sessionCwd(exec))
+            const r = await call('upload', { tabId, selector, files })
             return { text: `已把 ${r.files.length} 个文件塞进 ${target}` }
           }
           case 'focus': {
@@ -608,7 +745,8 @@ export function apply(ctx, config) {
         if (action === 'go') {
           if (!args.url) throw new Error('action=go 需要 url')
           const r = await call('nav', { tabId, url: args.url, wait: true }, 60000)
-          return { text: `已到 ${r.url}${r.title ? ` — ${r.title}` : ''}` }
+          const late = r.loaded === false ? '（页面还没加载完，需要的话 browser_wait 等一下）' : ''
+          return { text: `已到 ${r.url}${r.title ? ` — ${r.title}` : ''}${late}` }
         }
         const r = await historyNav(call, tabId, action)
         const verb = { back: '已后退到', forward: '已前进到', reload: '已刷新' }[action]
@@ -731,13 +869,13 @@ export function apply(ctx, config) {
         url: { type: 'string', description: '网址里要包含的一段' },
         gone: { type: 'boolean', description: 'true = 等它消失，默认 false' },
         tab: { type: 'string', description: TAB_DESC },
-        timeoutMs: { type: 'integer', description: '超时毫秒，默认 15000' },
+        timeoutMs: { type: 'integer', description: `超时毫秒，默认 15000，最多 ${WAIT_MAX_MS}` },
       },
       output: textOutput,
       presentCall: present('Browser wait'),
       async execute(args) {
         const tabId = await resolveTab(args.tab)
-        const timeoutMs = Number(args.timeoutMs || 15000)
+        const timeoutMs = Math.min(Number(args.timeoutMs || 15000), WAIT_MAX_MS)
         const has = (v) => v !== undefined && v !== null && v !== ''
         const given = [args.selector, args.text, args.url].filter(has).length
         if (given !== 1) throw new Error('selector / text / url 给且只给一个')

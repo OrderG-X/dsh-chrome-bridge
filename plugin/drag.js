@@ -85,7 +85,7 @@ const NATIVE_JS = (from, to, a, b) => `(() => {
  *                 让用户看得见在拖什么；任何一步出错都不影响真实拖拽
  */
 export async function drag(call, tabId, from, to, { steps = 12, cursor } = {}) {
-  const plan = (await call('eval', { tabId, expression: PLAN_JS(from, to) })).value
+  const plan = (await call('eval', { tabId, expression: PLAN_JS(from, to), userGesture: false })).value
   if (!plan) throw new Error('页面没回话（可能刚跳转，重试一次）')
   if (plan.missing) {
     const end = plan.missing === 'from' ? from : to
