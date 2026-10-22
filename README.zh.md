@@ -24,6 +24,12 @@
 
 **让 DSH 的 agent 在你正在用的 Chrome 里动手**——带你的登录态、你的标签页、你的会话。装一次，永远不用再点 Connect。
 
+> **一句话**：DeepSeek Harness（DSH）插件，让模型直接操作你平时用的 Chrome：打开网页、点击、打字、填表、读网页、截图、多标签页，用的是你已有的登录状态。
+>
+> **什么时候用**：「帮我在网页上填个表」「打开这个后台看一下」「给这个网站截个图」，凡是要在浏览器里动手的事。
+>
+> **安装**：`dsh plugin add https://github.com/OrderG-X/dsh-chrome-bridge/releases/latest/download/dsh-chrome-bridge.tgz`，重启 DSH，再从 [Chrome 应用商店](https://chromewebstore.google.com/detail/bippcbbbipppmhjkjomgdnjbooecbimo) 装 DSH Bridge 扩展。需要 macOS、Chrome 116+、Node.js 18+。
+
 ![页内光标在真实页面上操作](assets/cursor-demo.gif)
 
 <sub>每次点击都会有个小光标飞到目标上，并标出它在干什么。它渲染在**页面里**，所以**会进截图**——人和模型看到的是同一画面。</sub>

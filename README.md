@@ -24,6 +24,12 @@
 
 **Give your DSH agent hands inside the Chrome you are already using** — your logins, your tabs, your session. Install once, no Connect button, ever.
 
+> **What it is:** a DeepSeek Harness (DSH) plugin that lets the model operate the Chrome you already use: open pages, click, type, fill in forms, read pages, take screenshots and work across tabs, with your existing logins.
+>
+> **Use it for:** "fill in this web form", "check this admin page for me", "screenshot this site", or anything else the model has to do inside a browser.
+>
+> **Install:** `dsh plugin add https://github.com/OrderG-X/dsh-chrome-bridge/releases/latest/download/dsh-chrome-bridge.tgz`, restart DSH, then add the DSH Bridge extension from the [Chrome Web Store](https://chromewebstore.google.com/detail/bippcbbbipppmhjkjomgdnjbooecbimo). Needs macOS, Chrome 116+ and Node.js 18+.
+
 ![the in-page cursor driving a real page](assets/cursor-demo.gif)
 
 <sub>Every click flies a cursor to the target and labels what it is doing. It renders *inside the page*, so it lands in screenshots too — you and the model look at the same picture.</sub>
