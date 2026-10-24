@@ -222,6 +222,10 @@ DSH 浏览器插件这个方向已经挺热闹，值得一看：
 
 **这里的区别**：**不开监听端口**（走 native messaging）、**真实 CDP 输入事件**（`chrome.debugger`）、**页内光标会出现在截图里**。
 
+## 💬 反馈
+
+遇到问题或想要新功能，[提一个 issue](https://github.com/OrderG-X/dsh-chrome-bridge/issues/new/choose)。报问题时写上 DSH 版本和插件版本，修起来最快。
+
 ## 🤝 贡献
 
 欢迎 issue 和 PR。
