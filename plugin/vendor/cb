@@ -41,16 +41,25 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import crypto from 'node:crypto'
+import { fileURLToPath } from 'node:url'
 
-// 和宿主同一个约定：只有当前用户进得去的 /tmp/dsh-bridge-<uid>/
-const DIR = process.env.DSH_BRIDGE_DIR || `/tmp/dsh-bridge-${process.getuid()}`
-const SOCK = process.env.DSH_BRIDGE_SOCK || path.join(DIR, 'dsh-bridge.sock')
+// 和宿主同一个约定：只有当前用户进得去的 /tmp/dsh-bridge-<uid>/（Windows：%TEMP%\dsh-bridge）
+const WIN = process.platform === 'win32'
+const DIR = process.env.DSH_BRIDGE_DIR || (WIN ? path.join(os.tmpdir(), 'dsh-bridge') : `/tmp/dsh-bridge-${process.getuid()}`)
 const TOKEN_FILE = process.env.DSH_BRIDGE_TOKEN || path.join(DIR, 'dsh-bridge.token')
+const FIXED_SOCK = process.env.DSH_BRIDGE_SOCK || (WIN ? null : path.join(DIR, 'dsh-bridge.sock'))
+
+/** token 文件：第一行 token；Windows 上第二行是宿主这次起的命名管道 */
+function tokenLines() {
+  try { return fs.readFileSync(TOKEN_FILE, 'utf8').split('\n').map((l) => l.trim()) } catch { return [] }
+}
+function hostSock() { return FIXED_SOCK || tokenLines()[1] || null }
+function hostUp() { const s = hostSock(); return Boolean(s) && (WIN || fs.existsSync(s)) }
 
 /** socket 所在目录必须是自己的、别人进不去：不然连上的可能是别人摆的假宿主（会把要打的字、要跑的 JS 都交出去） */
 function checkDir(dir) {
   const st = fs.lstatSync(dir)
-  if (!st.isDirectory() || st.uid !== process.getuid() || (st.mode & 0o077)) {
+  if (!st.isDirectory() || (!WIN && (st.uid !== process.getuid() || (st.mode & 0o077)))) {
     throw new Error(`${dir} 不是只属于当前用户的目录，拒绝连接`)
   }
 }
@@ -76,7 +85,7 @@ function die(msg) {
 }
 
 function readToken() {
-  try { return fs.readFileSync(TOKEN_FILE, 'utf8').trim() } catch { return null }
+  return tokenLines()[0] || null
 }
 
 // 换目录之前的宿主只在这儿听：升级后 Chrome 没重启，它就还活着
@@ -89,6 +98,7 @@ const LEGACY_TOKEN = '/tmp/dsh-bridge.token'
  */
 function nudgeLegacyHost() {
   return new Promise((resolve) => {
+    if (WIN) return resolve(false)
     try {
       const st = fs.lstatSync(LEGACY_SOCK)
       const tk = fs.lstatSync(LEGACY_TOKEN)
@@ -108,19 +118,20 @@ function nudgeLegacyHost() {
 }
 
 async function call(op, args = {}, timeoutMs = 60000) {
-  if (!fs.existsSync(SOCK) && !process.env.DSH_BRIDGE_SOCK && await nudgeLegacyHost()) {
+  if (!hostUp() && !process.env.DSH_BRIDGE_SOCK && await nudgeLegacyHost()) {
     // 扩展重载 + 新宿主起来一般一两秒；最多等 10 秒
-    for (let i = 0; i < 40 && !fs.existsSync(SOCK); i++) await new Promise((r) => setTimeout(r, 250))
-    if (op === 'reload' && fs.existsSync(SOCK)) return { reloading: true }   // 刚才那下就是重载，不用再来一次
+    for (let i = 0; i < 40 && !hostUp(); i++) await new Promise((r) => setTimeout(r, 250))
+    if (op === 'reload' && hostUp()) return { reloading: true }   // 刚才那下就是重载，不用再来一次
   }
   return new Promise((resolve, reject) => {
-    if (!fs.existsSync(SOCK)) {
-      if (fs.existsSync(LEGACY_SOCK)) {
+    const SOCK = hostSock()
+    if (!hostUp()) {
+      if (!WIN && fs.existsSync(LEGACY_SOCK)) {
         return reject(new Error(`宿主没在跑（找不到 ${SOCK}）。老版宿主还占着 ${LEGACY_SOCK}、叫不醒：重启一次 Chrome`))
       }
-      return reject(new Error(`宿主没在跑（找不到 ${SOCK}）。Chrome 开着吗？扩展装了吗？`))
+      return reject(new Error(`宿主没在跑（找不到 ${SOCK || TOKEN_FILE}）。Chrome 开着吗？扩展装了吗？`))
     }
-    try { checkDir(path.dirname(SOCK)) } catch (e) { return reject(e) }
+    try { checkDir(WIN ? DIR : path.dirname(SOCK)) } catch (e) { return reject(e) }
     const token = readToken()
     const id = crypto.randomUUID()
     const sock = net.connect(SOCK)
@@ -156,7 +167,7 @@ function cursorScript() {
   const cands = [
     process.env.DSH_CURSOR_JS,
     path.join(os.homedir(), '.dsh/chrome-cursor/in-page-cursor.js'),
-    path.join(path.dirname(new URL(import.meta.url).pathname), '../scratch/in-page-cursor.js'),
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '../scratch/in-page-cursor.js'),
   ].filter(Boolean)
   for (const p of cands) {
     try { return fs.readFileSync(p, 'utf8') } catch {}
@@ -182,7 +193,7 @@ const USAGE = `cb <命令> [参数]     用 cb help 看完整用法`
 
 async function main() {
   if (!cmd || cmd === 'help' || flags.help) {
-    console.log(fs.readFileSync(new URL(import.meta.url).pathname, 'utf8').split('*/')[0].replace(/^\/\*\*?/, '').replace(/^ \* ?/gm, '').trim())
+    console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('*/')[0].replace(/^\/\*\*?/, '').replace(/^ \* ?/gm, '').trim())
     return
   }
 
@@ -313,7 +324,7 @@ async function main() {
     case 'record': {
       const tabId = await resolveTab(rest[0])
       const ms = Number(flags.ms || 5000)
-      const dir = String(flags.out || `/tmp/dsh-frames-${Date.now()}`)
+      const dir = String(flags.out || path.join(WIN ? os.tmpdir() : '/tmp', `dsh-frames-${Date.now()}`))
       fs.mkdirSync(dir, { recursive: true })
       const r = await call('screencast', {
         tabId, durationMs: ms, maxWidth: Number(flags.width || 900), quality: Number(flags.quality || 70),
@@ -390,7 +401,7 @@ async function main() {
         full: !!flags.full,
         selector: flags.sel || undefined,
       }, 90000)
-      const file = String(flags.out || `/tmp/dsh-shot-${Date.now()}.${format === 'jpeg' ? 'jpg' : 'png'}`)
+      const file = String(flags.out || path.join(WIN ? os.tmpdir() : '/tmp', `dsh-shot-${Date.now()}.${format === 'jpeg' ? 'jpg' : 'png'}`))
       fs.writeFileSync(file, Buffer.from(r.data, 'base64'))
       out(file, { file, format, url: r.url, title: r.title, bytes: fs.statSync(file).size, full: r.full, clip: r.clip })
       return

@@ -25,7 +25,7 @@ const LOOPBACK_HOST = /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/i
 /**
  * 当前状态。连不上时也要答得出「差哪一步」，所以安装情况单独给。
  * @param call - socket 调用（index.js 的 call）
- * @param sock - socket 路径；文件都不在就是宿主没起（= 扩展没在 Chrome 里跑）
+ * @param sock - 宿主在不在的判断函数（或 socket 路径）；不在就是宿主没起（= 扩展没在 Chrome 里跑）
  */
 export async function panelState(call, sock) {
   const inst = installState()
@@ -36,7 +36,7 @@ export async function panelState(call, sock) {
     extDir: paths().extDir,
     connected: false,
   }
-  if (!fs.existsSync(sock)) return base
+  if (!(typeof sock === 'function' ? sock() : fs.existsSync(sock))) return base
   let ver
   try {
     ver = await call('version', {}, 3000)
@@ -87,7 +87,7 @@ function readJson(req, limit = 4096) {
 
 /**
  * @param deps.call - socket 调用
- * @param deps.sock - socket 路径
+ * @param deps.sock - 宿主在不在的判断函数（或 socket 路径）
  * @param deps.origin - DSH 网页端自己的 origin（webServer.getOrigin）
  * @param deps.trace - 日志
  */

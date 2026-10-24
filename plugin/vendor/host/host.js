@@ -4,7 +4,8 @@
  *
  * 两条腿：
  *   1. stdin/stdout ← native messaging 协议（4 字节 LE 长度前缀 + JSON）→ Chrome 扩展
- *   2. /tmp/dsh-bridge-<uid>/dsh-bridge.sock ← 换行分隔 JSON → DSH 的 `cb` CLI
+ *   2. /tmp/dsh-bridge-<uid>/dsh-bridge.sock ← 换行分隔 JSON → DSH 插件和 `cb` CLI
+ *      （Windows 没有 Unix socket：每次起一个随机名字的命名管道，名字写在 token 文件第二行）
  *
  * 由 Chrome 拉起（扩展 connectNative 时）。stdin 关闭 = Chrome 没了 = 退出。
  * 调试时可以手动跑：node host.js --standalone
@@ -12,13 +13,17 @@
 
 import net from 'node:net'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 
 // socket / token / 日志都放进只有当前用户进得去的目录（0700）：/tmp 人人可写，
 // 固定文件名会被别的用户抢先占位、或者用软链接把我们的写入引到别处。插件和 cb 用同一个约定。
-const DIR = process.env.DSH_BRIDGE_DIR || `/tmp/dsh-bridge-${process.getuid()}`
-const SOCK = process.env.DSH_BRIDGE_SOCK || path.join(DIR, 'dsh-bridge.sock')
+// Windows 上 %TEMP% 本来就是每个用户自己的目录
+const WIN = process.platform === 'win32'
+const DIR = process.env.DSH_BRIDGE_DIR || (WIN ? path.join(os.tmpdir(), 'dsh-bridge') : `/tmp/dsh-bridge-${process.getuid()}`)
+const SOCK = process.env.DSH_BRIDGE_SOCK ||
+  (WIN ? `\\\\.\\pipe\\dsh-bridge-${crypto.randomBytes(12).toString('hex')}` : path.join(DIR, 'dsh-bridge.sock'))
 const TOKEN_FILE = process.env.DSH_BRIDGE_TOKEN || path.join(DIR, 'dsh-bridge.token')
 const LOG_FILE = process.env.DSH_BRIDGE_LOG || path.join(DIR, 'dsh-bridge.log')
 const TIMEOUT_MS = Number(process.env.DSH_BRIDGE_TIMEOUT_MS || 45000)
@@ -32,12 +37,12 @@ const TOKEN = crypto.randomBytes(24).toString('hex')
 function privateDir(dir) {
   try { fs.mkdirSync(dir, { mode: 0o700 }) } catch (e) { if (e.code !== 'EEXIST') throw e }
   const st = fs.lstatSync(dir)
-  if (!st.isDirectory() || st.uid !== process.getuid()) throw new Error(`${dir} 不是当前用户自己的目录，拒绝使用`)
-  if (st.mode & 0o077) fs.chmodSync(dir, 0o700)
+  if (!st.isDirectory() || (!WIN && st.uid !== process.getuid())) throw new Error(`${dir} 不是当前用户自己的目录，拒绝使用`)
+  if (!WIN && (st.mode & 0o077)) fs.chmodSync(dir, 0o700)
 }
 
 try {
-  for (const d of new Set([SOCK, TOKEN_FILE, LOG_FILE].map((f) => path.dirname(f)))) privateDir(d)
+  for (const d of new Set([...(WIN ? [] : [SOCK]), TOKEN_FILE, LOG_FILE].map((f) => path.dirname(f)))) privateDir(d)
 } catch (e) {
   process.stderr.write(`dsh-bridge: ${e.message}\n`)   // Chrome 会把宿主的 stderr 记进它自己的日志
   process.exit(1)
@@ -57,7 +62,7 @@ function writeToken() {
   const tmp = `${TOKEN_FILE}.${process.pid}.tmp`
   try { fs.unlinkSync(tmp) } catch {}
   const fd = fs.openSync(tmp, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
-  try { fs.writeSync(fd, TOKEN + '\n') } finally { fs.closeSync(fd) }
+  try { fs.writeSync(fd, TOKEN + '\n' + (WIN ? SOCK + '\n' : '')) } finally { fs.closeSync(fd) }
   fs.renameSync(tmp, TOKEN_FILE)
 }
 
@@ -186,7 +191,7 @@ function handleLine(sock, line) {
 
 function startServer() {
   try {
-    if (fs.existsSync(SOCK)) {
+    if (!WIN && fs.existsSync(SOCK)) {
       // 探测一下是不是活着的旧实例；活着也让路（接管），否则清掉陈旧文件
       try {
         const probe = net.connect(SOCK)
@@ -215,8 +220,10 @@ function startServer() {
   server.on('error', (e) => { log('socket 服务出错:', String(e)); shutdown(1) })
   server.listen(SOCK, () => {
     listening = true
-    fs.chmodSync(SOCK, 0o600)
-    try { const st = fs.lstatSync(SOCK); ownSock = { dev: st.dev, ino: st.ino } } catch {}
+    if (!WIN) {
+      fs.chmodSync(SOCK, 0o600)
+      try { const st = fs.lstatSync(SOCK); ownSock = { dev: st.dev, ino: st.ino } } catch {}
+    }
     try { writeToken() } catch (e) { log('写 token 失败:', String(e)); shutdown(1) }
     log(`监听 ${SOCK}（pid ${process.pid}, standalone=${STANDALONE}）`)
   })
@@ -231,8 +238,13 @@ function shutdown(code) {
   // 不调 server.close()：Node 关 Unix socket 服务时会按路径无条件 unlink（实测），
   // 正好会删掉后来接管的新宿主的 socket。反正马上退出，fd 由系统回收。
   try {
-    const st = fs.lstatSync(SOCK)
-    if (ownSock && st.dev === ownSock.dev && st.ino === ownSock.ino) fs.unlinkSync(SOCK)
+    if (WIN) {
+      // 命名管道随进程消失；token 文件还指着自己的管道就删掉，免得客户端连一个不存在的管道
+      if (fs.readFileSync(TOKEN_FILE, 'utf8').split('\n')[1] === SOCK) fs.unlinkSync(TOKEN_FILE)
+    } else {
+      const st = fs.lstatSync(SOCK)
+      if (ownSock && st.dev === ownSock.dev && st.ino === ownSock.ino) fs.unlinkSync(SOCK)
+    }
   } catch {}
   process.exit(code)
 }

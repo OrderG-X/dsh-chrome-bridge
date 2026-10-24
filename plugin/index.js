@@ -35,18 +35,29 @@ import { drag } from './drag.js'
  */
 
 // socket / token / 日志都在只有当前用户进得去的 /tmp/dsh-bridge-<uid>/（和宿主、cb 同一个约定）：
-// /tmp 人人可写，固定文件名会被别的用户抢先占位，或者用软链接把写入引到别处
+// /tmp 人人可写，固定文件名会被别的用户抢先占位，或者用软链接把写入引到别处。
+// Windows：目录是 %TEMP%\dsh-bridge（本来就只属于当前用户）；没有 Unix socket，宿主每次起一个
+// 随机名字的命名管道，名字写在 token 文件第二行
+const WIN = process.platform === 'win32'
 const UID = typeof process.getuid === 'function' ? process.getuid() : null
-const DIR = process.env.DSH_BRIDGE_DIR || `/tmp/dsh-bridge-${UID ?? 'user'}`
-const SOCK = process.env.DSH_BRIDGE_SOCK || path.join(DIR, 'dsh-bridge.sock')
+const DIR = process.env.DSH_BRIDGE_DIR || (WIN ? path.join(os.tmpdir(), 'dsh-bridge') : `/tmp/dsh-bridge-${UID ?? 'user'}`)
 const TOKEN_FILE = process.env.DSH_BRIDGE_TOKEN || path.join(DIR, 'dsh-bridge.token')
+const FIXED_SOCK = process.env.DSH_BRIDGE_SOCK || (WIN ? null : path.join(DIR, 'dsh-bridge.sock'))
+
+function tokenLines() {
+  try { return fs.readFileSync(TOKEN_FILE, 'utf8').split('\n').map((l) => l.trim()) } catch { return [] }
+}
+/** 宿主在听的地址（Windows 上每次启动都换） */
+function hostSock() { return FIXED_SOCK || tokenLines()[1] || null }
+/** 宿主起没起：socket 文件在不在；Windows 看 token 文件里有没有管道名（宿主退出时会删掉） */
+function hostUp() { const s = hostSock(); return Boolean(s) && (WIN || fs.existsSync(s)) }
 const TRACE = path.join(DIR, 'plugin.log')
 const { O_WRONLY, O_CREAT, O_APPEND, O_NOFOLLOW } = fs.constants
 
 /** 目录必须是自己的真目录（不是软链接）、别人进不去：不然连上的可能是别人摆的假宿主 */
 function checkDir(dir) {
   const st = fs.lstatSync(dir)
-  if (!st.isDirectory() || (UID !== null && st.uid !== UID) || (st.mode & 0o077)) {
+  if (!st.isDirectory() || (!WIN && ((UID !== null && st.uid !== UID) || (st.mode & 0o077)))) {
     throw new Error(`${dir} 不是只属于当前用户的目录，拒绝使用`)
   }
 }
@@ -180,11 +191,11 @@ function firstAid() {
   if (aided) return ''
   aided = true
   try {
-    if (fs.existsSync(SOCK)) return ''
+    if (hostUp()) return ''
     const r = assistInstall()
     const notes = []
     if (r.opened) notes.push(`我已经帮你把 chrome://extensions 打开（后台标签页）${r.store ? '，看一眼 DSH Bridge 是不是启用着' : ''}`)
-    if (r.clipboard) notes.push('扩展文件夹的路径已经复制到剪贴板（文件框里 ⌘⇧G 再 ⌘V 回车就到）')
+    if (r.clipboard) notes.push(`扩展文件夹的路径已经复制到剪贴板（${WIN ? '粘进文件框顶上的地址栏、回车' : '文件框里 ⌘⇧G 再 ⌘V 回车'}就到）`)
     return notes.length ? `\n（${notes.join('；')}）` : ''
   } catch {
     return ''
@@ -199,12 +210,12 @@ const HINT = () => installHint() + firstAid()
 /** 一次请求一个连接，协议是换行分隔的 JSON（和 cb CLI 完全一致）。 */
 function call(op, args = {}, timeoutMs = 60000) {
   return new Promise((resolve, reject) => {
-    if (!fs.existsSync(SOCK)) {
-      return reject(new Error(`浏览器桥没在跑（找不到 ${SOCK}）：Chrome 没开，或扩展还没加载。\n${HINT()}`))
+    const SOCK = hostSock()
+    if (!hostUp()) {
+      return reject(new Error(`浏览器桥没在跑（找不到 ${SOCK || TOKEN_FILE}）：Chrome 没开，或扩展还没加载。\n${HINT()}`))
     }
-    try { checkDir(path.dirname(SOCK)) } catch (e) { return reject(e) }
-    let token = null
-    try { token = fs.readFileSync(TOKEN_FILE, 'utf8').trim() } catch {}
+    try { checkDir(WIN ? DIR : path.dirname(SOCK)) } catch (e) { return reject(e) }
+    const token = tokenLines()[0] || null
     const id = crypto.randomUUID()
     const sock = net.connect(SOCK)
     let acc = ''
@@ -293,6 +304,7 @@ async function emulateFocus(tabId) {
  * 只发 reload，不发别的。
  */
 function nudgeLegacyHost() {
+  if (WIN) return
   try {
     const legacy = '/tmp/dsh-bridge.sock'
     const tokenFile = '/tmp/dsh-bridge.token'
@@ -316,7 +328,7 @@ function nudgeLegacyHost() {
  * reload 只会白白掐断宿主一下；而商店版本号常常落后本地，不跳过就会每次启动都重载。
  */
 async function refreshExtension() {
-  if (!fs.existsSync(SOCK)) {
+  if (!hostUp()) {
     if (!process.env.DSH_BRIDGE_SOCK) nudgeLegacyHost()
     return
   }
@@ -450,7 +462,7 @@ export function apply(ctx, config) {
         sub.effect(() => sub.webServer.register({
           kind: 'exact',
           path: PANEL_ROUTE,
-          handler: panelHandler({ call, sock: SOCK, origin: () => sub.webServer.getOrigin(), trace }),
+          handler: panelHandler({ call, sock: hostUp, origin: () => sub.webServer.getOrigin(), trace }),
         }), 'chrome-bridge: settings panel route')
         trace(`设置页路由已挂上 ${PANEL_ROUTE}`)
       })

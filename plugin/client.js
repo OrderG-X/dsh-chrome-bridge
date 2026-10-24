@@ -40,7 +40,7 @@ window.__ModuleLoader__.load({
       connected: '已连接',
       paused: '已暂停',
       disconnected: '未连接',
-      unsupported: '目前只支持 macOS',
+      unsupported: '目前只支持 macOS、Windows、Linux',
       summaryOn: '已连接 · 正在控制 %n 个标签页',
       summaryIdle: '已连接，没有在控制的标签页',
       summaryOff: '还没连上 Chrome，点开看怎么装',
@@ -70,6 +70,7 @@ window.__ModuleLoader__.load({
       openInstall: '帮我打开安装页',
       installOpened: '已在 Chrome 里打开扩展页',
       pathCopied: '，文件夹路径也复制好了（文件框里按 ⌘⇧G 再 ⌘V）',
+      pathCopiedWin: '，文件夹路径也复制好了（粘进文件框顶上的地址栏、回车）',
       plugin: '插件 v%v',
       guide: '使用说明',
       failed: '操作没成功：%e',
@@ -81,7 +82,7 @@ window.__ModuleLoader__.load({
       connected: 'Connected',
       paused: 'Paused',
       disconnected: 'Not connected',
-      unsupported: 'macOS only for now',
+      unsupported: 'Supports macOS, Windows and Linux only',
       summaryOn: 'Connected · controlling %n tab(s)',
       summaryIdle: 'Connected, no tabs under control',
       summaryOff: 'Not connected to Chrome yet — open for setup steps',
@@ -111,6 +112,7 @@ window.__ModuleLoader__.load({
       openInstall: 'Open the install page for me',
       installOpened: 'Opened the extensions page in Chrome',
       pathCopied: '; the folder path is on the clipboard (⌘⇧G then ⌘V in the file picker)',
+      pathCopiedWin: '; the folder path is on the clipboard (paste it into the file picker\'s address bar)',
       plugin: 'Plugin v%v',
       guide: 'Guide',
       failed: 'That did not work: %e',
@@ -206,7 +208,7 @@ window.__ModuleLoader__.load({
 
     function phaseOf(s) {
       if (!s) return 'checking'
-      if (s.platform && s.platform !== 'darwin') return 'unsupported'
+      if (s.platform && !['darwin', 'win32', 'linux'].includes(s.platform)) return 'unsupported'
       if (!s.connected) return 'off'
       return s.paused ? 'paused' : 'on'
     }
@@ -274,7 +276,7 @@ window.__ModuleLoader__.load({
                 h('li', null, t('setupStep3'))),
             state.store ? null : h('p', { className: 'dcb-hint' }, t('setupStoreAlt'))),
           state.store ? null : h(Btn, { primary: true, disabled: busy, onClick: () => run({ action: 'install', via: 'store' }, t('storeOpened')) }, t('openStore')),
-          h(Btn, { primary: !!state.store, disabled: busy, onClick: () => run({ action: 'install' }, (s) => t('installOpened') + (s.assist && s.assist.clipboard ? t('pathCopied') : '')) }, t('openInstall')))) : null
+          h(Btn, { primary: !!state.store, disabled: busy, onClick: () => run({ action: 'install' }, (s) => t('installOpened') + (s.assist && s.assist.clipboard ? t(state.platform === 'win32' ? 'pathCopiedWin' : 'pathCopied') : '')) }, t('openInstall')))) : null
 
       const switches = state && state.connected ? h('div', { className: 'dcb-card' },
         h('div', { className: 'dcb-row' },
