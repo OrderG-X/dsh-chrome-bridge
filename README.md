@@ -223,6 +223,10 @@ The DSH browser-plugin space is already busy — these are worth a look:
 
 What is different here: **no listening port** (native messaging), **real CDP input events** via `chrome.debugger`, and an **on-page cursor that shows up in screenshots**.
 
+## 💬 Feedback
+
+Found a bug or want a feature? [Open an issue](https://github.com/OrderG-X/dsh-chrome-bridge/issues/new/choose). Including your DSH and plugin versions helps a lot.
+
 ## 🤝 Contributing
 
 Issues and PRs welcome.
