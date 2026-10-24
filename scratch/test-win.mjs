@@ -2,7 +2,8 @@
  * Windows / Linux 那几处分支的自测（在 Mac 上也能跑；真注册表、真 Chrome 由 CI 里的 e2e-chrome.mjs 测）：
  *   ① paths()：Windows 用 run.bat、注册文件放宿主旁边；Linux 的注册目录
  *   ② run.bat：CRLF、先关回显再切 UTF-8、Electron 才设 ELECTRON_RUN_AS_NODE、不往 stdout 打字
- *   ③ 假装成 Windows（没有 process.getuid）加载插件：不崩、工具照样注册、宿主没起来时给的是人话
+ *   ③ 读注册表的导出文件（UTF-16，中文路径不乱码）
+ *   ④ 假装成 Windows（没有 process.getuid）加载插件：不崩、工具照样注册、宿主没起来时给的是人话
  *
  * 跑法：node scratch/test-win.mjs      （不碰真实 HOME）
  */
@@ -12,7 +13,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { paths, winLauncher } from '../plugin/setup.js'
+import { paths, winLauncher, parseRegExport } from '../plugin/setup.js'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 let failures = 0
@@ -42,7 +43,13 @@ check('run.bat 跑同目录的 host.js、透传参数', bat.includes('"%N%" "%~d
 const loud = lines.filter((x) => x && !/^(@echo off|chcp 65001 >nul|setlocal|set |if |"%N%")/.test(x))
 check('run.bat 没有会往 stdout 打字的行（stdout 是 native messaging 管道）', loud.length === 0, loud.join(' | '))
 
-// ③ 假装成 Windows 加载插件
+// ③ 读注册表：reg export 导出的是 UTF-16 文件，中文路径不会变问号
+const nm = 'C:\\Users\\张三 的电脑\\.dsh\\chrome-bridge\\com.dsh.bridge.json'
+const exported = Buffer.from(`\uFEFFWindows Registry Editor Version 5.00\r\n\r\n[HKEY_CURRENT_USER\\Software\\Google\\Chrome\\NativeMessagingHosts\\com.dsh.bridge]\r\n@="${nm.replace(/\\/g, '\\\\')}"\r\n\r\n`, 'utf16le')
+check('读注册表导出：中文、空格、反斜杠都对', parseRegExport(exported.toString('utf16le')) === nm, parseRegExport(exported.toString('utf16le')))
+check('读注册表导出：没有默认值 → null', parseRegExport('Windows Registry Editor Version 5.00\r\n\r\n[HKEY_CURRENT_USER\\x]\r\n"a"="b"\r\n') === null)
+
+// ④ 假装成 Windows 加载插件
 const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-bridge-win-'))
 try {
   const script = `

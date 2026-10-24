@@ -147,13 +147,24 @@ export function storeExtension(home = os.homedir()) {
   return null
 }
 
-/** Windows 注册表里某一项的默认值；读不到回 null */
-function regValue(key) {
+/**
+ * Windows 注册表里某一项的默认值；读不到回 null。
+ * 用 reg export 导出成 UTF-16 文件再读：reg query 的输出按控制台代码页编码，DSH 桌面版里没有控制台，中文路径会变成问号。
+ */
+export function regValue(key) {
+  const file = path.join(os.tmpdir(), `dsh-bridge-reg-${process.pid}.reg`)
   try {
-    const out = execFileSync('reg', ['query', key, '/ve'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true })
-    const m = /REG_SZ\s+(.*)$/m.exec(out)
-    return m ? m[1].trim() : null
-  } catch { return null }
+    execFileSync('reg', ['export', key, file, '/y'], { stdio: 'ignore', windowsHide: true })
+    return parseRegExport(fs.readFileSync(file, 'utf16le'))
+  } catch { return null } finally {
+    try { fs.rmSync(file, { force: true }) } catch {}
+  }
+}
+
+/** reg export 导出的文本里取默认值（@="…"，反斜杠和引号是转义过的） */
+export function parseRegExport(text) {
+  const m = /^@="((?:[^"\\]|\\.)*)"/m.exec(text)
+  return m ? m[1].replace(/\\(.)/g, '$1') : null
 }
 
 /**

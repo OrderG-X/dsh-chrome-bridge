@@ -20,7 +20,6 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import http from 'node:http'
-import { execFile } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { WIN, OS, FIXED_EXT_ID, sleep, checker, browserBin, launchBrowser, cb, dumpLogs } from './e2e-lib.mjs'
 
@@ -47,6 +46,13 @@ if (LOCAL || CJK) {
   const home = CJK ? path.join(tmpHome, '张三 的电脑') : tmpHome
   fs.mkdirSync(home, { recursive: true })
   process.env.HOME = process.env.USERPROFILE = home
+  if (WIN && CJK) {
+    // 像真的中文用户名那样，AppData 和临时目录也在用户目录下（Chrome 按 USERPROFILE 找 AppData，找不到会当成默认数据目录、不让调试）
+    process.env.LOCALAPPDATA = path.join(home, 'AppData', 'Local')
+    process.env.APPDATA = path.join(home, 'AppData', 'Roaming')
+    process.env.TEMP = process.env.TMP = path.join(process.env.LOCALAPPDATA, 'Temp')
+    for (const d of [process.env.APPDATA, process.env.TEMP]) fs.mkdirSync(d, { recursive: true })
+  }
 }
 if (LOCAL) process.env.DSH_BRIDGE_DIR = path.join(tmpHome, 'run')
 
@@ -56,7 +62,7 @@ let server = null
 
 try {
   // ① 自动安装
-  const { ensureInstalled, installState, paths, REG_KEYS } = await import(pathToFileURL(path.join(ROOT, 'plugin/setup.js')))
+  const { ensureInstalled, installState, paths, REG_KEYS, regValue } = await import(pathToFileURL(path.join(ROOT, 'plugin/setup.js')))
   const inst = ensureInstalled()
   check('自动安装成功', inst.ok, inst.reason)
   const st = installState()
@@ -67,8 +73,9 @@ try {
   if (CJK) check('装进了中文带空格的用户目录', p.launcher.includes('张三 的电脑'), p.launcher)
   if (WIN) {
     const key = BROWSER === 'edge' ? REG_KEYS[1] : REG_KEYS[0]
-    const reg = await new Promise((r) => execFile('reg', ['query', key, '/ve'], (e, o) => r(o || '')))
-    check(`注册表（${BROWSER === 'edge' ? 'Edge' : 'Chrome'}）指向注册文件`, reg.includes(p.nmFile), reg.trim())
+    const reg = regValue(key)
+    check(`注册表（${BROWSER === 'edge' ? 'Edge' : 'Chrome'}）指向注册文件`, reg === p.nmFile, reg)
+    check('再装一次认得出已是最新（中文路径读注册表不乱码）', ensureInstalled().changed !== true)
     if (process.versions.electron) {
       const bat = fs.readFileSync(p.launcher, 'utf8')
       check('run.bat 用 Electron 当 node 拉宿主', bat.includes('ELECTRON_RUN_AS_NODE=1') && bat.includes(process.execPath), bat)
