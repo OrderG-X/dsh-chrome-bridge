@@ -116,8 +116,7 @@ export async function launchBrowser({ bin, extDir, nmFile, headed = false }) {
     return { proc, cdp, product: ver.product, extId: id, log: () => log, close }
   } catch (e) {
     await close()
-    e.message += `\n── 浏览器 stderr ──\n${log.split('\n').slice(-20).join('\n')}`
-    throw e
+    throw new Error(`${e.message}\n── 浏览器 stderr ──\n${log.split('\n').slice(-20).join('\n')}`)
   }
 }
 
