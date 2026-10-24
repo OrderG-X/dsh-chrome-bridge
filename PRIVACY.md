@@ -17,7 +17,7 @@ It reads these **only while a local agent (DSH) asks it to**, over Chrome's nati
 ## Where the data goes
 
 1. Chrome → native host: over Chrome's native messaging pipe (stdio). **Local only.**
-2. Native host → your DSH agent: over a Unix socket (`/tmp/dsh-bridge-<uid>/dsh-bridge.sock`, inside a per-user `0700` directory, plus a token file). **Local only.**
+2. Native host → your DSH agent: over a Unix socket (`/tmp/dsh-bridge-<uid>/dsh-bridge.sock`, inside a per-user `0700` directory, plus a token file); on Windows over a named pipe with a random name, whose name and token sit in `%TEMP%\dsh-bridge\` in your own user folder. **Local only.**
 3. What your DSH agent then does with that content — including sending it to whichever model provider you configured in DSH — is decided by **DSH and your own configuration, not by this extension**. Please read DSH's own privacy terms for that.
 
 The extension itself makes no outbound requests: no telemetry, no update pings, no third-party scripts. All code is in this repository; the extension loads no remote code.
@@ -25,7 +25,7 @@ The extension itself makes no outbound requests: no telemetry, no update pings, 
 ## What is stored
 
 - The extension keeps a small amount of local state (`chrome.storage`) for its own settings.
-- The native host writes nothing to disk except its own log (`/tmp/dsh-bridge-<uid>/dsh-bridge.log`) and the socket/token files listed above; the DSH plugin keeps its own trace log (`plugin.log`) in the same directory.
+- The native host writes nothing to disk except its own log (`/tmp/dsh-bridge-<uid>/dsh-bridge.log`; on Windows `%TEMP%\dsh-bridge\dsh-bridge.log`) and the socket/token files listed above; the DSH plugin keeps its own trace log (`plugin.log`) in the same directory.
 - Uninstalling the extension and running `./bridge uninstall` (or `install.sh --uninstall`) removes all of it.
 
 ## Permissions and why they are needed

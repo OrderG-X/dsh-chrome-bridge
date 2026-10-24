@@ -21,7 +21,7 @@ Drive the Chrome you already use from a local DSH agent: real clicks and typing 
 ```
 DSH Bridge gives a locally running DSH (DeepSeek Harness) agent hands inside the Chrome you already use — your logins, your tabs, your session.
 
-Nothing opens a port and nothing asks you to press Connect: the extension talks to a small helper process on your Mac over Chrome's native messaging pipe, and moves the mouse and keyboard through real Chrome DevTools Protocol input events.
+Nothing opens a port and nothing asks you to press Connect: the extension talks to a small helper process on your computer over Chrome's native messaging pipe, and moves the mouse and keyboard through real Chrome DevTools Protocol input events.
 
 What you get:
 • Real input — clicks, typing, keys, scrolling, drags and file pickers are dispatched as trusted CDP events, not synthetic DOM hacks.
@@ -32,12 +32,12 @@ What you get:
 • A permanent "DSH Bridge is debugging this browser" banner while attached — press Cancel on it and the bridge detaches instantly.
 
 Requirements (important):
-• macOS. The native helper is macOS-only for now.
+• macOS, Windows or Linux, with Node.js 18+.
 • DSH installed, with the matching dsh-chrome-bridge plugin (it installs the helper and registers this extension for native messaging).
 • The helper is a local Node process. Install it from https://github.com/OrderG-X/dsh-chrome-bridge — the plugin does it automatically on first load.
 Without the helper the extension is inert: it has nothing to talk to, and it will tell you so.
 
-Privacy: the extension has no server, no analytics and no outbound requests of its own. Page content is read on your machine only while your local agent asks for it, and is handed to that agent over a 0600 Unix socket. What your agent then does with it — including anything sent to the model provider you configured in DSH — is governed by DSH and your own settings.
+Privacy: the extension has no server, no analytics and no outbound requests of its own. Page content is read on your machine only while your local agent asks for it, and is handed to that agent over a local channel only your user account can use (a 0600 Unix socket on macOS and Linux; on Windows a named pipe that needs a token kept in your own user folder). What your agent then does with it — including anything sent to the model provider you configured in DSH — is governed by DSH and your own settings.
 
 Full privacy policy: https://github.com/OrderG-X/dsh-chrome-bridge/blob/main/PRIVACY.md
 Source code, issues and the helper: https://github.com/OrderG-X/dsh-chrome-bridge
@@ -84,7 +84,7 @@ https://github.com/OrderG-X/dsh-chrome-bridge/blob/main/PRIVACY.md
 ```
 DSH Bridge 让本机运行的 DSH（DeepSeek Harness）智能体直接操作你正在用的 Chrome —— 用你的登录状态、你的标签页、你的会话。
 
-不开任何端口，也不用点 Connect：扩展通过 Chrome 的 native messaging 管道和你 Mac 上的一个小助手进程通信，再用真实的 Chrome DevTools Protocol 输入事件来移动鼠标、敲键盘。
+不开任何端口，也不用点 Connect：扩展通过 Chrome 的 native messaging 管道和你电脑上的一个小助手进程通信，再用真实的 Chrome DevTools Protocol 输入事件来移动鼠标、敲键盘。
 
 你会得到：
 • 真实输入 —— 点击、输入、按键、滚动、拖拽、选文件，都以可信的 CDP 事件发出，不是模拟的 DOM 小把戏。
@@ -95,12 +95,12 @@ DSH Bridge 让本机运行的 DSH（DeepSeek Harness）智能体直接操作你�
 • 接管期间 Chrome 会一直显示「DSH Bridge 正在调试此浏览器」的提示条 —— 点上面的「取消」，桥接立刻断开。
 
 使用要求（重要）：
-• macOS。原生助手目前只支持 macOS。
+• macOS、Windows 或 Linux，需要 Node.js 18+。
 • 已安装 DSH，并装好配套的 dsh-chrome-bridge 插件（它会装好助手，并为本扩展注册 native messaging）。
 • 助手是一个本地 Node 进程。来源：https://github.com/OrderG-X/dsh-chrome-bridge —— 插件首次加载时会自动装好。
 没有助手时扩展什么也不做：它没有可以对话的对象，并会明确告诉你。
 
-隐私：扩展没有服务器、没有统计，自己也不发任何外部请求。只有当本机的智能体请求时，页面内容才会在你的电脑上被读取，并通过一个权限为 0600 的 Unix socket 交给这个智能体。智能体之后怎么用这些内容 —— 包括发给你在 DSH 里配置的模型服务商 —— 由 DSH 和你自己的设置决定。
+隐私：扩展没有服务器、没有统计，自己也不发任何外部请求。只有当本机的智能体请求时，页面内容才会在你的电脑上被读取，并通过只有你这个系统用户能用的本地通道交给这个智能体（macOS、Linux 上是权限 0600 的 Unix socket；Windows 上是命名管道，要凭存放在你自己用户目录里的令牌才能用）。智能体之后怎么用这些内容 —— 包括发给你在 DSH 里配置的模型服务商 —— 由 DSH 和你自己的设置决定。
 
 完整隐私政策：https://github.com/OrderG-X/dsh-chrome-bridge/blob/main/PRIVACY.md
 源码、问题反馈和助手：https://github.com/OrderG-X/dsh-chrome-bridge
@@ -156,7 +156,7 @@ The agent works on whatever page the user points it at, and the on-page cursor o
 ## Test instructions tab (for the reviewer)
 
 ```
-This extension is the browser half of a local tool. It only talks to a native-messaging helper on the same Mac, so on its own its toolbar panel shows "helper not connected" - that is expected. No account or login is needed.
+This extension is the browser half of a local tool. It only talks to a native-messaging helper on the same computer, so on its own its toolbar panel shows "helper not connected" - that is expected. No account or login is needed.
 
 To test on macOS (needs Node.js 18+ and git):
 1. Install this extension from the store.
