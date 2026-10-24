@@ -12,7 +12,7 @@ When you turn it on, it can read and control the pages in your Chrome — that i
 - tab list, titles and URLs (`tabs`),
 - the pages you are signed into, including form fields if an agent types into them.
 
-It reads these **only while a local agent (DSH) asks it to**, over Chrome's native-messaging pipe to a helper process running as your macOS user.
+It reads these **only while a local agent (DSH) asks it to**, over Chrome's native-messaging pipe to a helper process running as your own OS user.
 
 ## Where the data goes
 

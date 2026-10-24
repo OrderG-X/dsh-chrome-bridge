@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT" />
   <a href="https://chromewebstore.google.com/detail/bippcbbbipppmhjkjomgdnjbooecbimo"><img src="https://img.shields.io/chrome-web-store/v/bippcbbbipppmhjkjomgdnjbooecbimo?label=Chrome%20Web%20Store&logo=googlechrome&logoColor=white&color=4285F4" alt="Chrome Web Store" /></a>
   <img src="https://img.shields.io/badge/chrome-%E2%89%A5%20116-4285F4?logo=googlechrome&logoColor=white" alt="Chrome >= 116" />
-  <img src="https://img.shields.io/badge/platform-macOS-000000?logo=apple&logoColor=white" alt="macOS" />
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-000000" alt="macOS | Windows | Linux" />
   <img src="https://img.shields.io/badge/node-%E2%89%A5%2018-43853d?logo=node.js&logoColor=white" alt="Node >= 18" />
   <img src="https://img.shields.io/badge/CDP-chrome.debugger-4D6BFE" alt="chrome.debugger" />
 </p>
@@ -28,7 +28,7 @@
 >
 > **Use it for:** "fill in this web form", "check this admin page for me", "screenshot this site", or anything else the model has to do inside a browser.
 >
-> **Install:** `dsh plugin add https://github.com/OrderG-X/dsh-chrome-bridge/releases/latest/download/dsh-chrome-bridge.tgz`, restart DSH, then add the DSH Bridge extension from the [Chrome Web Store](https://chromewebstore.google.com/detail/bippcbbbipppmhjkjomgdnjbooecbimo). Needs macOS, Chrome 116+ and Node.js 18+.
+> **Install:** `dsh plugin add https://github.com/OrderG-X/dsh-chrome-bridge/releases/latest/download/dsh-chrome-bridge.tgz`, restart DSH, then add the DSH Bridge extension from the [Chrome Web Store](https://chromewebstore.google.com/detail/bippcbbbipppmhjkjomgdnjbooecbimo). Needs macOS, Windows or Linux, Chrome 116+ and Node.js 18+.
 
 ![the in-page cursor driving a real page](assets/cursor-demo.gif)
 
@@ -74,7 +74,7 @@ The extension ID is fixed by the public key embedded in `plugin/vendor/extension
 
 **The host ships inside the plugin package.** Adding the plugin copies the native host and the MV3 extension into place and registers native messaging for you — no `git clone`, no `install.sh`, no `python3`.
 
-Requirements: **macOS**, **Google Chrome 116+**, **Node.js 18+**.
+Requirements: **macOS, Windows or Linux**, **Google Chrome 116+**, **Node.js 18+**.
 
 **1.** Sidebar → **Plugins** → **Add plugin** → paste this → Install → Enable → **restart DSH**:
 
@@ -89,13 +89,13 @@ https://github.com/OrderG-X/dsh-chrome-bridge/releases/latest/download/dsh-chrom
 **Or: load it unpacked** (to run the newest extension from the repo). Chrome 137+ removed `--load-extension`, so that click has to be yours; the plugin walks you to it:
 
 - the first time a `browser_*` tool finds nothing to talk to, it **opens `chrome://extensions` in a background tab** and **puts `~/dsh-bridge-extension` on your clipboard** (once per session; the error text repeats the steps);
-- in the file picker press **⌘⇧G**, then **⌘V**, then Enter — no folder hunting.
+- in the file picker press **⌘⇧G**, then **⌘V**, then Enter — no folder hunting (Windows: paste into the picker's address bar, then Enter; Linux: **Ctrl+L**, paste, Enter).
 
 Do it once, ever:
 
 1. open `chrome://extensions`
 2. enable **Developer mode** (top right)
-3. **Load unpacked** → **⌘⇧G** → **⌘V** → Enter (the folder is already on your clipboard)
+3. **Load unpacked** → **⌘⇧G** → **⌘V** → Enter (the folder is already on your clipboard; Windows / Linux: see above)
 
 From a source checkout, `./bridge setup` does exactly this in one command: installs the host, opens the page, copies the path, and waits until the extension connects — printing ✅ when it does.
 
@@ -205,7 +205,7 @@ Be honest about what this is: **the extension can read and control every page yo
 
 ## ⚠️ Limitations
 
-- **macOS only** for now — the native-host registration path is macOS-specific; Windows and Linux need their own registration directory.
+- **Windows and Linux support is new** — a daily CI run on GitHub's Windows and Linux machines installs it, connects a real Chrome and reads a page, but it has not been used on a real person's PC yet. Please open an issue if something breaks. On Windows it also registers for Edge (untested).
 - **`chrome://` pages are unreachable** — Chrome forbids injection there. Use a normal tab.
 - An `alert()` blocks the page: `cb info` warns you, `cb dialog accept` releases it.
 - Chrome defers `alert()` in background tabs until the tab is focused.

@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT" />
   <a href="https://chromewebstore.google.com/detail/bippcbbbipppmhjkjomgdnjbooecbimo"><img src="https://img.shields.io/chrome-web-store/v/bippcbbbipppmhjkjomgdnjbooecbimo?label=Chrome%20Web%20Store&logo=googlechrome&logoColor=white&color=4285F4" alt="Chrome Web Store" /></a>
   <img src="https://img.shields.io/badge/chrome-%E2%89%A5%20116-4285F4?logo=googlechrome&logoColor=white" alt="Chrome >= 116" />
-  <img src="https://img.shields.io/badge/platform-macOS-000000?logo=apple&logoColor=white" alt="macOS" />
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-000000" alt="macOS | Windows | Linux" />
   <img src="https://img.shields.io/badge/node-%E2%89%A5%2018-43853d?logo=node.js&logoColor=white" alt="Node >= 18" />
   <img src="https://img.shields.io/badge/CDP-chrome.debugger-4D6BFE" alt="chrome.debugger" />
 </p>
@@ -28,7 +28,7 @@
 >
 > **什么时候用**：「帮我在网页上填个表」「打开这个后台看一下」「给这个网站截个图」，凡是要在浏览器里动手的事。
 >
-> **安装**：`dsh plugin add https://github.com/OrderG-X/dsh-chrome-bridge/releases/latest/download/dsh-chrome-bridge.tgz`，重启 DSH，再从 [Chrome 应用商店](https://chromewebstore.google.com/detail/bippcbbbipppmhjkjomgdnjbooecbimo) 装 DSH Bridge 扩展。需要 macOS、Chrome 116+、Node.js 18+。
+> **安装**：`dsh plugin add https://github.com/OrderG-X/dsh-chrome-bridge/releases/latest/download/dsh-chrome-bridge.tgz`，重启 DSH，再从 [Chrome 应用商店](https://chromewebstore.google.com/detail/bippcbbbipppmhjkjomgdnjbooecbimo) 装 DSH Bridge 扩展。需要 macOS / Windows / Linux、Chrome 116+、Node.js 18+。
 
 ![页内光标在真实页面上操作](assets/cursor-demo.gif)
 
@@ -74,7 +74,7 @@ DSH 的 agent（harness 自带，本仓库不提供）
 
 **宿主就在插件包里。** 装插件时它会把原生宿主和 MV3 扩展复制到固定位置、并替你写好 native messaging 注册 —— 不用 `git clone`、不用跑 `install.sh`、不用 `python3`。
 
-要求：**macOS**、**Chrome 116+**、**Node.js 18+**。
+要求：**macOS / Windows / Linux**、**Chrome 116+**、**Node.js 18+**。
 
 **1.** 侧栏 → **插件** → **添加插件** → 粘贴这个 → 安装 → 启用 → **重启 DSH**：
 
@@ -89,13 +89,13 @@ https://github.com/OrderG-X/dsh-chrome-bridge/releases/latest/download/dsh-chrom
 **或者：加载未打包的扩展**（想用仓库里最新的扩展时）。Chrome 137+ 移除了 `--load-extension`，这一下得你自己点，插件会把你送到那一下面前：
 
 - 第一次有 `browser_*` 工具发现没宿主可连时，它会**在后台标签页打开 `chrome://extensions`**，并**把 `~/dsh-bridge-extension` 复制进剪贴板**（每个会话只做一次；报错文字里也写着这几步）；
-- 文件框里按 **⌘⇧G** → **⌘V** → 回车 就选好了，不用在目录树里翻。
+- 文件框里按 **⌘⇧G** → **⌘V** → 回车 就选好了，不用在目录树里翻（Windows：粘进文件框顶上的地址栏 → 回车；Linux：**Ctrl+L** → 粘贴 → 回车）。
 
 一辈子做一次：
 
 1. 打开 `chrome://extensions`
 2. 右上角打开**开发者模式**
-3. **加载未打包的扩展程序** → **⌘⇧G** → **⌘V** → 回车（路径已经在剪贴板里）
+3. **加载未打包的扩展程序** → **⌘⇧G** → **⌘V** → 回车（路径已经在剪贴板里；Windows / Linux 见上一条）
 
 用源码装的话，一条 `./bridge setup` 就把这套走完：装宿主、打开页面、复制路径，然后**等你点完自动检测**，连上会打 ✅。
 
@@ -204,7 +204,7 @@ dsh-chrome-bridge uninstall
 
 ## ⚠️ 已知限制
 
-- **目前只有 macOS** —— 原生宿主的注册路径是 macOS 专有的，Windows/Linux 需要各自的注册目录
+- **Windows、Linux 是新支持的** —— 每天在 GitHub 的 Windows / Linux 机器上自动跑一遍「装好 → 真 Chrome 连上 → 读页面」，但还没在真人电脑上用过，遇到问题请提 issue。Windows 上也给 Edge 写了注册，没测过
 - **`chrome://` 内部页进不去** —— 浏览器禁止注入，换普通标签页
 - `alert()` 会把页面卡死：`cb info` 会警告，`cb dialog accept` 放行
 - Chrome 会把后台标签页的 `alert()` 推迟到该标签页获得焦点才弹
