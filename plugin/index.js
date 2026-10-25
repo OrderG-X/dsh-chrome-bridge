@@ -18,11 +18,12 @@ import { fileURLToPath } from 'node:url'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { installImageGuard } from './image-guard.js'
 import { ensureInstalled, installHint, assistInstall, paths, extensionId } from './setup.js'
-import { snapshot, locate, focusShadow, elementBox } from './refs.js'
+import { snapshot, locate, focusShadow, elementBox, selectInPage, frameTexts } from './refs.js'
 import { consoleLog, networkLog, responseBody, clearLogs } from './devtools.js'
 import { historyNav, waitUntil } from './nav.js'
 import { PANEL_ROUTE, panelHandler } from './panel.js'
 import { drag } from './drag.js'
+import { download, downloadsDir, humanSize } from './download.js'
 
 /**
  * 这里刻意不 import 任何外部包——不碰 `@deepseek-ai/dsh-tools`。
@@ -148,6 +149,7 @@ function hintOf(name, a = {}) {
       return `${a.gone ? '等消失 ' : ''}${a.text ? `「${short(a.text, 20)}」` : a.url ? `网址 ${short(a.url, 30)}` : short(a.selector, 30)}`
     case 'browser_dialog': return a.action || ''
     case 'browser_drag': return `${el('from')} → ${el('to')}`
+    case 'browser_download': return a.ref !== undefined && a.ref !== null ? `[${a.ref}]` : short(a.selector || a.url || '', 50)
     case 'browser_devtools': return [a.action, a.level && a.level !== 'all' ? a.level : '', a.filter ? `「${short(a.filter, 16)}」` : ''].filter(Boolean).join(' ')
     default: return ''
   }
@@ -545,7 +547,7 @@ export function apply(ctx, config) {
       name: 'browser_read',
       description:
         '读页面内容。what=snapshot 列出页面上能点/能填的元素，每个带编号 [N]——要操作页面时先调它，' +
-        '之后 browser_click / browser_input 直接传 ref=N，比猜选择器稳；' +
+        '之后 browser_click / browser_input 直接传 ref=N，比猜选择器稳（同源 iframe 里的元素也会列出、也能按编号操作）；' +
         'text 取可见文字（抓内容首选）；html 取外层 HTML；' +
         'attr 取某个属性；info 取标题/URL/视口，并会告诉你有没有 alert 弹窗挡着（挡着的话先调 browser_dialog）。',
       parameters: {
@@ -566,7 +568,16 @@ export function apply(ctx, config) {
           }
           case 'text': {
             const r = await call('text', { tabId, selector: args.selector || undefined, limit })
-            return { text: clip(r.text, limit) || '(页面没有可见文字)' }
+            let text = r.text || ''
+            // 整页读时把同源 iframe 里的字接在后面（innerText 不含框架内容）；跨站的给一行提示
+            if (!args.selector) {
+              for (const f of await frameTexts(call, tabId).catch(() => [])) {
+                text += f.cross
+                  ? `\n\n[iframe] ${f.src}（跨站框架，读不到里面的字：browser_screenshot 看）`
+                  : f.text ? `\n\n[iframe] ${f.src}\n${f.text}` : ''
+              }
+            }
+            return { text: clip(text.trim(), limit) || '(页面没有可见文字)' }
           }
           case 'html': {
             const r = await call('html', { tabId, selector: args.selector || 'body', limit })
@@ -619,7 +630,7 @@ export function apply(ctx, config) {
             const r = await call('clickEl', { tabId, selector: el.selector, ...withCursor() })
             return { text: `已点击 [${args.ref}] ${r.target.tag}「${r.target.text}」@ (${r.x}, ${r.y})` }
           }
-          // shadow DOM 里的元素（选择器够不着），或者要双击：按坐标点
+          // shadow DOM / iframe 里的元素（选择器够不着），或者要双击：按坐标点
           const r = await call('click', { tabId, x: el.x, y: el.y, clickCount: count, ...withCursor() })
           return { text: `已点击 [${args.ref}] ${el.tag}「${el.text}」@ (${r.x}, ${r.y})${count > 1 ? ` ×${count}` : ''}` }
         }
@@ -667,14 +678,14 @@ export function apply(ctx, config) {
       async execute(args, exec) {
         const tabId = await resolveTab(args.tab)
         if (args.action !== 'scroll') await emulateFocus(tabId)
-        // 有编号就先把它换成选择器；shadow DOM 里的元素换不成，下面各自按坐标/页内处理
+        // 有编号就先把它换成选择器；shadow DOM / iframe 里的元素换不成，下面各自按坐标/页内处理
         const hasRef = args.ref !== undefined && args.ref !== null &&
           ['type', 'select', 'upload', 'focus', 'hover'].includes(args.action)
         const el = hasRef ? await locate(call, tabId, args.ref) : null
         const selector = el ? el.selector : args.selector
         const target = hasRef ? `[${args.ref}]` : args.selector
         const noShadow = (what) => {
-          if (el && el.shadow) throw new Error(`编号 ${args.ref} 在 shadow DOM 里，${what} 暂时不支持按编号——改用 browser_eval`)
+          if (el && el.shadow) throw new Error(`编号 ${args.ref} 在 shadow DOM 或 iframe 里，${what} 暂时不支持按编号——改用 browser_eval`)
         }
         switch (args.action) {
           case 'type': {
@@ -695,7 +706,10 @@ export function apply(ctx, config) {
           case 'select': {
             if (!selector && !el) throw new Error('action=select 需要 ref 或 selector')
             if (args.value === undefined) throw new Error('action=select 需要 value')
-            noShadow('select')
+            if (el && el.shadow) {
+              const r = await selectInPage(call, tabId, args.ref, args.value)
+              return { text: `已选择「${r.label}」(${r.value})` }
+            }
             const r = await call('select', { tabId, selector, value: args.value })
             return { text: `已选择「${r.label}」(${r.value})` }
           }
@@ -976,6 +990,46 @@ export function apply(ctx, config) {
           }
           : undefined
         return { text: await drag(call, tabId, from, to, { steps: args.steps, cursor }) }
+      },
+    }),
+
+    // ── 下载 ────────────────────────────────────────────────────────────────
+    defineTool({
+      name: 'browser_download',
+      description:
+        '把链接指向的文件（发票、报表、PDF、图片……）下载到本机，带着用户在 Chrome 里的登录状态。' +
+        '给 ref（snapshot 里的链接编号）、selector 或 url 三选一；相对地址按页面算，blob: / data: 链接也行。' +
+        '默认存进「下载」文件夹，to=workdir 存进会话工作目录；同名不覆盖，自动加 (1)。' +
+        '下载按钮不是链接（点了才生成文件）的话：先 browser_click 它，再用 browser_devtools action=network 找到文件网址，交给这里。',
+      parameters: {
+        ref: { type: 'integer', description: REF_DESC },
+        selector: { type: 'string', description: 'CSS 选择器（指向 a / img / video / source 等带地址的元素）' },
+        url: { type: 'string', description: '要下载的网址，可以是相对地址' },
+        tab: { type: 'string', description: TAB_DESC },
+        filename: { type: 'string', description: '存成什么名字；省略时用服务器给的名字或网址里的名字' },
+        to: { type: 'string', enum: ['downloads', 'workdir'], description: 'downloads（默认）存进「下载」文件夹；workdir 存进会话工作目录' },
+      },
+      output: textOutput,
+      presentCall: present('Download file'),
+      async execute(args, exec) {
+        const tabId = await resolveTab(args.tab)
+        let dir = downloadsDir()
+        if (args.to === 'workdir') {
+          dir = sessionCwd(exec)
+          if (!dir) throw new Error('拿不到会话工作目录，去掉 to=workdir 存进「下载」文件夹')
+        }
+        const r = await download(call, tabId, {
+          url: args.url || undefined,
+          ref: args.ref ?? undefined,
+          selector: args.selector || undefined,
+          filename: args.filename || undefined,
+          dir,
+        })
+        const type = (r.type || '').split(';')[0].trim()
+        const warn = /^text\/html/i.test(type)
+          ? '\n⚠️ 下到的是网页（text/html），多半是登录页或「下载即将开始」的中转页，不是文件本身：打开看看，或者换成真正的文件链接'
+          : ''
+        return { text: `已下载：${r.file}（${humanSize(r.size)}${type ? `，${type}` : ''}）${warn}` }
       },
     }),
 

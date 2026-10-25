@@ -4,6 +4,7 @@
  *   ② 起一个真浏览器，把扩展当「已解压」加载进去（CDP Extensions.loadUnpacked，Chrome 137+ 不再认 --load-extension）
  *   ③ 等浏览器按注册拉起宿主、扩展连上（cb status）
  *   ④ cb 开本地页面、读标题；再用插件自己的 browser_* 工具读同一页
+ *   ⑤ 下载文件、同源 iframe 里的元素（e2e-features.mjs）
  *
  * CI（GitHub 的 macOS / Windows / Linux 机器）里用真 HOME、真注册、默认宿主目录，测的就是用户机器上那条路。
  * 本地跑（没有 CI 环境变量）时 HOME 和宿主目录都换成临时的，不碰你自己的 Chrome 和正在用的宿主。
@@ -22,6 +23,7 @@ import path from 'node:path'
 import http from 'node:http'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { WIN, OS, FIXED_EXT_ID, sleep, checker, browserBin, launchBrowser, cb, dumpLogs } from './e2e-lib.mjs'
+import { featureChecks } from './e2e-features.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const argv = process.argv.slice(2)
@@ -125,6 +127,9 @@ try {
   check('browser_tabs 列出测试页', String(list.text).includes(TITLE), String(list.text).slice(0, 300))
   const ev = await tools.get('browser_eval').execute({ expression: "document.querySelector('#x').textContent", tab: String(opened.tabId) }, {})
   check('browser_eval 读到页面内容', String(ev.text).includes('你好，桥'), String(ev.text).slice(0, 300))
+
+  // ⑤ 下载文件、同源 iframe（见 e2e-features.mjs）
+  await featureChecks({ check, tools, browserCdp: browser.cdp })
 } catch (e) {
   check('没有异常', false, e && e.stack || e)
 } finally {

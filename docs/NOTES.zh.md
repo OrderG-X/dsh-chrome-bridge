@@ -677,3 +677,37 @@ DSH Bridge 在 Chrome 应用商店过审上线了（商店上是扩展 1.10.0；
 - 测试：`test-setup` 加一条「报错给出商店链接、排在解压装法前面」。
   设置卡在本地拿 React 离线渲染了没装 / 商店版没连上两种状态，按钮发出去的是 `{"action":"install","via":"store"}`；
   DSH 桌面端实测：插件正常加载，已连接状态的设置页照常。
+
+---
+
+# 2026-10-25 —— 下载文件 + 同源 iframe（v1.15.0，12 个工具，只改插件）
+
+扩展一行没动、也没加权限（加 downloads 权限要重新过商店审核，用户还得再点一次同意）。
+
+## `browser_download`（`plugin/download.js`）
+
+- 先在页面里 `fetch(url, { credentials: 'include' })`：走 Chrome 自己的网络（登录、代理、证书），
+  文件先放 `window.__dshDl[id]`，再每次 2MB 用 base64 读回来写 `.part`，最后改名。blob: / data: 只能走这条。
+- 被 CORS / CSP 拦了（跨站链接）→ 插件用 Node fetch 自己下：每一跳重定向都用 CDP `Network.getCookies {urls:[这一跳]}`
+  取这个网址的 Cookie，带上页面的 UA、语言、来源页。Cookie 只进请求头，不回给模型。
+  这条路不走系统代理（Node fetch 不读），所以排第二。
+- 起名：参数 > Content-Disposition（`filename*` 优先）> 链接的 download 属性 > 网址最后一段；没扩展名按类型补。
+  去掉路径分隔符和非法字符、开头的点；重名加「 (1)」。默认 `~/Downloads`，`to=workdir` 存会话工作目录。
+- 下到 text/html 时提醒（多半是登录页 / 中转页）。
+
+## 同源 iframe（`plugin/refs.js`）
+
+- 快照遇到 iframe：`contentDocument` 拿得到就往里走，夹在 `[iframe] src ↓` 和 `[/iframe]` 之间；拿不到（跨站）列一行提示。
+- 框架里的元素 `getRootNode() !== document`，和 shadow DOM 一样记 WeakRef、走坐标那条路。
+  `BOX_FN` 由外到里把每层框架滚进视口，坐标加上每层框架内容区的位置（框 + clientLeft/Top + padding）。
+- 框架跳转后旧元素 `isConnected` 仍是 true（连着作废的文档），所以失效判断加上 `ownerDocument.defaultView`。
+- `select` 对 shadow / 框架里的下拉框改在页面里直接选（扩展的 select 只认 document.querySelector）。upload 仍不支持。
+- `browser_read what=text` 整页读时把同源框架的 innerText 接在后面。
+- 跨站框架（OOPIF）要扩展用 `chrome.debugger` 子会话才进得去，这次不做。
+
+## 验证
+
+- `scratch/e2e-features.mjs`（接在 e2e-chrome.mjs 后面，CI 三个系统都跑）：两个本地站点（127.0.0.1 / localhost），
+  测同站带 Cookie、中文文件名、5MB 分块、跨站 Cookie + 302、blob、框架里的链接、重名、非法文件名、404、网页提醒、默认下载目录；
+  框架里按编号点击（页面滚过 + 框架有边框内边距）、打字、选下拉、元素截图、读文字、跨站框架提示。
+- `scratch/test-download.mjs`：起名规则的单元测试。

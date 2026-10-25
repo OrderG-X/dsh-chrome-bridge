@@ -108,12 +108,12 @@ cb tabs
 
 Until step 2 is done the `browser_*` tools fail **loudly with exactly these steps** — never silently.
 
-### 🧩 The eleven native tools
+### 🧩 The twelve native tools
 
 | Tool | What it does |
 |---|---|
 | `browser_tabs` | list / find / open / close / activate tabs |
-| `browser_read` | **numbered list of clickable / fillable elements** (`snapshot`), visible text, HTML, attributes, page info |
+| `browser_read` | **numbered list of clickable / fillable elements** (`snapshot` — **same-origin iframes included, and their elements are clickable by number too**), visible text, HTML, attributes, page info |
 | `browser_click` | click by element number (`ref`), selector, text, or coordinates |
 | `browser_input` | type, press keys, select, upload, hover, scroll |
 | `browser_nav` | go to a URL, **back / forward / reload**, and wait for load |
@@ -122,6 +122,7 @@ Until step 2 is done the `browser_*` tools fail **loudly with exactly these step
 | `browser_wait` | wait for an element, **a piece of text, or a URL** — or for it to go away (`gone`) |
 | `browser_dialog` | release alert / confirm / prompt |
 | `browser_drag` | drag by element number, selector, **visible text** or coordinates — HTML5 drag-and-drop and mouse-driven widgets (sliders, sortable lists) |
+| `browser_download` | **download a file** (invoices, reports, PDFs…) with your Chrome login, into Downloads or the session's working directory; never overwrites |
 | `browser_devtools` | **console output + uncaught JS errors, network requests (status, timing), a request's response body** |
 
 > A freshly installed bundle is not hot-loaded; DSH must be restarted once.

@@ -12,12 +12,12 @@ whenToUse: 任务要在"用户已经登录的那个浏览器"里做事情，或�
 
 ## 首选：`browser_*` 原生工具
 
-装了 Chrome Bridge 插件就有这 9 个工具，比走 shell 快、也不用引号转义：
+装了 Chrome Bridge 插件就有这 12 个工具，比走 shell 快、也不用引号转义：
 
 | 工具 | 用途 |
 |---|---|
 | `browser_tabs` | 列 / 找 / 开 / 关 / 切标签页（**先拿 tabId**） |
-| `browser_read` | **`what=snapshot` 给能点/能填的元素编号 [N]**（要操作页面先调它）；`text` 读可见文字；`html` / `attr` / `info`（info 会告诉你有没有弹窗挡着） |
+| `browser_read` | **`what=snapshot` 给能点/能填的元素编号 [N]**（要操作页面先调它；同源 iframe 里的元素也在里面，夹在 `[iframe] … ↓` 和 `[/iframe]` 之间）；`text` 读可见文字；`html` / `attr` / `info`（info 会告诉你有没有弹窗挡着） |
 | `browser_click` | 按 `ref`（编号，最稳）/ `selector` / `text` / 坐标点（真实鼠标事件） |
 | `browser_input` | `type` / `key` / `select` / `upload` / `focus` / `hover` / `scroll` |
 | `browser_nav` | `go` 跳转 / `back` 后退 / `forward` 前进 / `reload` 刷新，都等加载完 |
@@ -26,6 +26,7 @@ whenToUse: 任务要在"用户已经登录的那个浏览器"里做事情，或�
 | `browser_wait` | 等 `selector` 元素 / `text` 文字 / `url` 网址出现；`gone=true` 等它消失（加载圈） |
 | `browser_dialog` | 放行 alert / confirm / prompt |
 | `browser_drag` | 拖拽：起点终点各用 `ref` / `selector` / `text` / 坐标；放置区一般没编号，用 `toText` |
+| `browser_download` | 下载文件：`ref` / `selector` / `url` 三选一，带用户的登录状态；默认存「下载」文件夹，`to=workdir` 存会话工作目录。下载按钮不是链接时，先点它，再从 `browser_devtools network` 里找文件网址 |
 | `browser_devtools` | `console` 控制台 + JS 报错（`level=error` 只看报错）/ `network` 请求列表（`reload=true` 抓整页加载）/ `response` 看某个请求的返回内容 / `clear` |
 
 ## 备用：`cb` 命令行
@@ -66,6 +67,7 @@ cb cdp   <tab> <方法> '{...}'       # 原始 CDP 逃生口
 7. **页面不对劲（点了没反应、数据没出来、白屏）先查 `browser_devtools`**：`console level=error` 看报错，
    `network` 看接口是不是 4xx/5xx，再 `response` 看返回内容——别靠猜。
 8. 等异步内容用 `browser_wait`（等文字 / 网址 / 加载圈消失），别干等。
+9. **要文件就用 `browser_download`**，别去点浏览器的下载（存到哪、叫什么你都拿不到）。快照里写着「跨站框架」的 iframe 读不到里面：截图看，按坐标点。
 
 ## 什么时候别用它
 

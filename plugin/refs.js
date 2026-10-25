@@ -8,8 +8,9 @@
  * 编号怎么记：
  *   · 元素上打 data-dsh-ref="N" → 编号本身就是选择器 [data-dsh-ref="N"]，
  *     现成的 clickEl / type / select / upload / hover / shot 全都直接能用
- *   · 开放 shadow root 里的元素 document.querySelector 够不着，另记一份 WeakRef
- *     在 window.__dshSnap.shadow，动作时退回按坐标操作
+ *   · 开放 shadow root 里的元素、同源 iframe 里的元素 document.querySelector 够不着，另记一份 WeakRef
+ *     在 window.__dshSnap.shadow，动作时退回按坐标操作（框架里的坐标加上框架在页面上的位置）
+ *   · 跨站的 iframe 读不到里面（浏览器不让），只列一行提示
  *   · 同一个元素再快照沿用旧编号（模型手里的旧编号继续有效）；页面跳转后全部失效
  */
 
@@ -32,7 +33,9 @@ const SNAPSHOT_JS = (scope, maxItems) => `(() => {
   const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'HEAD', 'META', 'LINK']);
   const FORM = new Set(['INPUT', 'SELECT', 'TEXTAREA']);
 
-  const cursorOf = (el) => { try { return getComputedStyle(el).cursor } catch { return '' } };
+  // 框架里的元素按它自己那一页算样式
+  const css = (el) => (el.ownerDocument.defaultView || window).getComputedStyle(el);
+  const cursorOf = (el) => { try { return css(el).cursor } catch { return '' } };
   const shown = (el, st) => {
     const r = el.getBoundingClientRect();
     if (r.width < 1 || r.height < 1) return false;
@@ -109,7 +112,7 @@ const SNAPSHOT_JS = (scope, maxItems) => `(() => {
     const h = el.getAttribute('href');
     if (!h || h.startsWith('javascript:')) return '';
     try {
-      const u = new URL(h, location.href);
+      const u = new URL(h, el.baseURI);
       return u.origin === location.origin ? (u.pathname + u.search + u.hash) : (u.host + u.pathname);
     } catch { return h; }
   };
@@ -154,15 +157,25 @@ const SNAPSHOT_JS = (scope, maxItems) => `(() => {
   const lines = [];
   let count = 0, more = 0, scanned = 0;
   const MAX = ${Number(maxItems) || 300};
-  const walk = (parent) => {
+  const walk = (parent, depth = 0) => {
     for (const el of parent.children) {
       if (++scanned > 30000) return;
       if (SKIP.has(el.tagName) || el.id === '__dsh_cursor__') continue;
       let st;
-      try { st = getComputedStyle(el); } catch { continue; }
+      try { st = css(el); } catch { continue; }
       if (st.display === 'none') continue;
       if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') {
-        if (shown(el, st)) lines.push('[iframe] ' + cut(el.getAttribute('src') || el.getAttribute('title') || '', 80) + '（框架里的内容没展开）');
+        if (!shown(el, st)) continue;
+        const label = '[iframe] ' + cut(el.getAttribute('src') || el.getAttribute('title') || el.getAttribute('name') || '', 80);
+        let doc = null;
+        try { doc = el.contentDocument; } catch {}
+        if (doc && doc.body && depth < 5) {
+          lines.push(label + ' ↓');
+          walk(doc.body, depth + 1);
+          lines.push('[/iframe]');
+        } else {
+          lines.push(label + '（跨站框架，读不到里面：browser_screenshot 看，按坐标 x/y 点）');
+        }
         continue;
       }
       const hm = /^H([1-3])$/.exec(el.tagName);
@@ -179,8 +192,8 @@ const SNAPSHOT_JS = (scope, maxItems) => `(() => {
         }
       }
       if (el.tagName === 'SELECT' || el.tagName === 'svg') continue;
-      walk(el);
-      if (el.shadowRoot) walk(el.shadowRoot);
+      walk(el, depth);
+      if (el.shadowRoot) walk(el.shadowRoot, depth);
     }
   };
   walk(root);
@@ -198,7 +211,8 @@ const LOCATE_JS = (ref, wantPoint) => `(async () => {
     el = w && w.deref();
     shadow = true;
   }
-  if (!el || !el.isConnected) return { gone: true };
+  // 框架跳转过的话，旧元素还「连着」它那份已经作废的文档：defaultView 没了就算失效
+  if (!el || !el.isConnected || !el.ownerDocument.defaultView) return { gone: true };
   // 密码框的 value 绝不拿出来（会进工具结果、上光标名牌）
   const out = { shadow, selector: shadow ? null : sel, tag: el.tagName.toLowerCase(),
     text: (el.innerText || (el.type === 'password' ? '' : el.value) || el.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').trim().slice(0, 60) };
@@ -206,20 +220,33 @@ const LOCATE_JS = (ref, wantPoint) => `(async () => {
   return { ...out, ...(await ${BOX_FN}(el)) };
 })()`
 
-/** 页内函数：滚进视口，给出中点和框。后台标签页会暂停 rAF，所以定时器兜底（和扩展里 __dsh_point 同一个坑）。 */
+/**
+ * 页内函数：滚进视口，给出中点和框（整页视口坐标）。后台标签页会暂停 rAF，所以定时器兜底（和扩展里 __dsh_point 同一个坑）。
+ * 同源 iframe 里的元素：先由外到里把每层框架滚进视口，坐标再加上每层框架内容区在外层的位置（框 + 边框 + 内边距）。
+ */
 const BOX_FN = `(async (el) => {
+  const frames = [];
+  for (let w = el.ownerDocument.defaultView; w && w !== window && w.frameElement; w = w.parent) frames.push(w.frameElement);
+  for (let i = frames.length - 1; i >= 0; i--) frames[i].scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
   el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
   await new Promise((res) => { requestAnimationFrame(() => requestAnimationFrame(res)); setTimeout(res, 120); });
   const r = el.getBoundingClientRect();
-  return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2),
-    box: { x: r.left, y: r.top, width: r.width, height: r.height } };
+  let left = r.left, top = r.top;
+  for (const f of frames) {
+    const fr = f.getBoundingClientRect();
+    const fs = f.ownerDocument.defaultView.getComputedStyle(f);
+    left += fr.left + f.clientLeft + (parseFloat(fs.paddingLeft) || 0);
+    top += fr.top + f.clientTop + (parseFloat(fs.paddingTop) || 0);
+  }
+  return { x: Math.round(left + r.width / 2), y: Math.round(top + r.height / 2),
+    box: { x: left, y: top, width: r.width, height: r.height } };
 })`
 
-/** 页内表达式：编号 → 元素（找不到是 null）。普通元素按属性找，shadow 里的查 WeakRef 表。 */
+/** 页内表达式：编号 → 元素（找不到是 null）。普通元素按属性找，shadow / 框架里的查 WeakRef 表。 */
 export const refElementJs = (ref) => `(document.querySelector(${JSON.stringify(`[${ATTR}="${Number(ref)}"]`)}) || (() => {
   const w = window.__dshSnap && window.__dshSnap.shadow.get(${Number(ref)});
   const el = w && w.deref();
-  return el && el.isConnected ? el : null;
+  return el && el.isConnected && el.ownerDocument.defaultView ? el : null;
 })())`
 
 const goneError = (ref) =>
@@ -289,11 +316,63 @@ export async function focusShadow(call, tabId, ref) {
     expression: `(() => {
       const w = window.__dshSnap && window.__dshSnap.shadow.get(${n});
       const el = w && w.deref();
-      if (!el || !el.isConnected) return null;
+      if (!el || !el.isConnected || !el.ownerDocument.defaultView) return null;
       el.focus();
       return el.getRootNode().activeElement === el;
     })()`,
   })
   if (r.value === null) throw goneError(n)
   if (!r.value) throw new Error(`编号 ${n} 聚焦失败（元素可能不可聚焦）`)
+}
+
+/** shadow DOM / 框架里的下拉框：直接在页面里选（扩展的 select 只认 document.querySelector 找得到的）。 */
+export async function selectInPage(call, tabId, ref, value) {
+  const n = Number(ref)
+  const r = await call('eval', {
+    tabId,
+    expression: `(() => {
+      const el = ${refElementJs(n)};
+      if (!el) return null;
+      if (el.tagName !== 'SELECT') return { ok: false, why: '不是 <select> 元素' };
+      const v = ${JSON.stringify(String(value))};
+      const opts = [...el.options];
+      const hit = opts.find((o) => o.value === v) || opts.find((o) => (o.textContent || '').trim() === v);
+      if (!hit) return { ok: false, why: '没有这个选项', options: opts.map((o) => o.value).slice(0, 20) };
+      el.value = hit.value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      return { ok: true, value: hit.value, label: (hit.textContent || '').trim() };
+    })()`,
+    userGesture: false,
+  })
+  const v = r.value
+  if (v === null) throw goneError(n)
+  if (!v.ok) throw new Error(`选择失败：${v.why}${v.options ? '（可选值：' + v.options.join(', ') + '）' : ''}`)
+  return v
+}
+
+/** 同源 iframe 里的可见文字（document.body.innerText 不含框架内容）；跨站的只给一行提示。 */
+export async function frameTexts(call, tabId) {
+  const r = await call('eval', {
+    tabId,
+    expression: `(() => {
+      const out = [];
+      const walk = (doc, depth) => {
+        for (const f of doc.querySelectorAll('iframe, frame')) {
+          const b = f.getBoundingClientRect();
+          if (b.width < 2 || b.height < 2) continue;
+          const src = (f.getAttribute('src') || f.getAttribute('title') || f.getAttribute('name') || '').slice(0, 120);
+          let d = null;
+          try { d = f.contentDocument; } catch {}
+          if (!d || !d.body) { out.push({ src, cross: true }); continue; }
+          out.push({ src, text: (d.body.innerText || '').trim() });
+          if (depth < 4) walk(d, depth + 1);
+        }
+      };
+      walk(document, 0);
+      return out.slice(0, 30);
+    })()`,
+    userGesture: false,
+  })
+  return Array.isArray(r.value) ? r.value : []
 }

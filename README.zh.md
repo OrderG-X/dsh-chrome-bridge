@@ -108,12 +108,12 @@ cb tabs
 
 第 2 步没做之前，`browser_*` 工具会**带着这几步明确报错**，不会静默失败。
 
-### 🧩 十一个原生工具
+### 🧩 十二个原生工具
 
 | 工具 | 干什么 |
 |---|---|
 | `browser_tabs` | 列 / 找 / 开 / 关 / 切标签页 |
-| `browser_read` | **给能点/能填的元素编号**（`snapshot`）/ 读文字 / HTML / 属性 / 页面信息 |
+| `browser_read` | **给能点/能填的元素编号**（`snapshot`，**同源 iframe 里的也列出、也能按编号操作**）/ 读文字 / HTML / 属性 / 页面信息 |
 | `browser_click` | 按编号（`ref`）、选择器、文字或坐标点 |
 | `browser_input` | 输入 / 按键 / 选下拉 / 传文件 / 悬停 / 滚动 |
 | `browser_nav` | 跳转网址、**后退 / 前进 / 刷新**，都等加载完 |
@@ -122,6 +122,7 @@ cb tabs
 | `browser_wait` | 等元素、**等某段文字、等网址**出现，或等它消失（`gone`） |
 | `browser_dialog` | 放行 alert / confirm / prompt |
 | `browser_drag` | 拖拽：按编号、选择器、**可见文字**或坐标；HTML5 拖放和靠鼠标拖的组件（滑块、排序列表）都行 |
+| `browser_download` | **下载文件**（发票、报表、PDF……）：带着你在 Chrome 里的登录状态，存进「下载」文件夹或会话工作目录；同名不覆盖 |
 | `browser_devtools` | **控制台输出 + 未捕获的 JS 报错、网络请求（状态码、耗时）、某个请求的返回内容** |
 
 > 新装的 bundle 不会热加载，必须重启一次 app。
