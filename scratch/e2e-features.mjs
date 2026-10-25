@@ -102,7 +102,12 @@ export async function featureChecks({ check, tools, browserCdp }) {
     check('按编号往框架里的输入框打字', typed.ok && (await frameVal("d.getElementById('fi').value")).includes('你好 frame'), typed.text)
     const sel = await run('browser_input', { tab, action: 'select', ref: Number(ref('框架下拉')), value: '乙' })
     check('按编号选框架里的下拉框', sel.ok && (await frameVal("d.getElementById('fs').value")).includes('b'), sel.text)
-    const shot = await run('browser_screenshot', { tab, mode: 'element', ref: Number(ref('框架按钮')) })
+    const timed = async (name, args) => { const t0 = Date.now(); const r = await run(name, args); r.text += `（${Date.now() - t0}ms）`; return r }
+    const vshot = await timed('browser_screenshot', { tab, mode: 'viewport' })
+    check('能截可见区域', vshot.ok, vshot.text)
+    const tshot = await timed('browser_screenshot', { tab, mode: 'element', selector: '#csv' })
+    check('主页面的元素能单独截图', tshot.ok, tshot.text)
+    const shot = await timed('browser_screenshot', { tab, mode: 'element', ref: Number(ref('框架按钮')) })
     check('框架里的元素能单独截图', shot.ok, shot.text)
     const txt = await run('browser_read', { tab, what: 'text' })
     check('读文字带上框架里的字', txt.text.includes('框架里的字') && txt.text.includes('跨站框架，读不到'), txt.text.slice(-400))
