@@ -826,9 +826,15 @@ export function apply(ctx, config) {
           // 自己取框再直接截：扩展的 shot(selector) 取框只等 rAF，后台标签页里会卡满 15 秒
           const box = await elementBox(call, tabId, { ref: hasRef ? args.ref : undefined, selector: args.selector })
           if (!box || box.width < 1 || box.height < 1) throw new Error('这个元素没有大小（可能被隐藏了），截不了')
-          const shot = await call('cdp', {
+          const capture = () => call('cdp', {
             tabId, method: 'Page.captureScreenshot', params: { format, clip: { ...box, scale: 1 } },
           }, 90000)
+          // Edge 无头偶尔第一次带 clip 的截图一直不回（之后的都正常）：15 秒没回就再截一次，先发的那个结果不要了
+          const first = capture()
+          first.catch(() => {})
+          let timer
+          const late = new Promise((r) => { timer = setTimeout(r, 15000, null) })
+          const shot = (await Promise.race([first, late]).finally(() => clearTimeout(timer))) || (await capture())
           const t = (await call('tabs')).find((x) => x.id === tabId)
           r = { data: shot.result.data, format, url: t && t.url, title: t && t.title }
         } else {
