@@ -28,7 +28,7 @@
 >
 > **Use it for:** "fill in this web form", "check this admin page for me", "screenshot this site", or anything else the model has to do inside a browser.
 >
-> **Install:** `dsh plugin add https://github.com/OrderG-X/dsh-chrome-bridge/releases/latest/download/dsh-chrome-bridge.tgz`, restart DSH, then add the DSH Bridge extension from the [Chrome Web Store](https://chromewebstore.google.com/detail/bippcbbbipppmhjkjomgdnjbooecbimo). Needs macOS, Windows or Linux, Chrome 116+ and Node.js 18+.
+> **Install:** on the DSH Plugins page, click Add plugin and enter `dsh-chrome-bridge` (an npm package), restart DSH, then add the DSH Bridge extension from the [Chrome Web Store](https://chromewebstore.google.com/detail/bippcbbbipppmhjkjomgdnjbooecbimo). Needs macOS, Windows or Linux, Chrome 116+ and Node.js 18+.
 
 ![the in-page cursor driving a real page](assets/cursor-demo.gif)
 
@@ -76,11 +76,13 @@ The extension ID is fixed by the public key embedded in `plugin/vendor/extension
 
 Requirements: **macOS, Windows or Linux**, **Google Chrome 116+**, **Node.js 18+**.
 
-**1.** Sidebar → **Plugins** → **Add plugin** → paste this → Install → Enable → **restart DSH**:
+**1.** Sidebar → **Plugins** → **Add plugin** → enter this package name → Install → Enable → **restart DSH**:
 
 ```
-https://github.com/OrderG-X/dsh-chrome-bridge/releases/latest/download/dsh-chrome-bridge.tgz
+dsh-chrome-bridge
 ```
+
+It is an npm package. When DSH installs by package name and can't reach the official npm registry, it falls back to the npmmirror mirror in China, so GitHub is never needed. You can also paste the release tarball `https://github.com/OrderG-X/dsh-chrome-bridge/releases/latest/download/dsh-chrome-bridge.tgz`, which needs GitHub access.
 
 **2.** The plugin installs the host on first load (`~/.dsh/chrome-bridge`, `~/dsh-bridge-extension`, plus `com.dsh.bridge.json` in Chrome's `NativeMessagingHosts`). All that's left is getting the extension into Chrome — pick one:
 
