@@ -28,7 +28,7 @@
 >
 > **什么时候用**：「帮我在网页上填个表」「打开这个后台看一下」「给这个网站截个图」，凡是要在浏览器里动手的事。
 >
-> **安装**：`dsh plugin add https://github.com/OrderG-X/dsh-chrome-bridge/releases/latest/download/dsh-chrome-bridge.tgz`，重启 DSH，再从 [Chrome 应用商店](https://chromewebstore.google.com/detail/bippcbbbipppmhjkjomgdnjbooecbimo) 装 DSH Bridge 扩展。需要 macOS / Windows / Linux、Chrome 116+、Node.js 18+。
+> **安装**：DSH「插件」页 →「添加插件」，填 `dsh-chrome-bridge`（npm 包，连不上 npm 会自动换国内镜像），重启 DSH，再从 [Chrome 应用商店](https://chromewebstore.google.com/detail/bippcbbbipppmhjkjomgdnjbooecbimo) 装 DSH Bridge 扩展。需要 macOS / Windows / Linux、Chrome 116+、Node.js 18+。
 
 ![页内光标在真实页面上操作](assets/cursor-demo.gif)
 
@@ -76,11 +76,13 @@ DSH 的 agent（harness 自带，本仓库不提供）
 
 要求：**macOS / Windows / Linux**、**Chrome 116+**、**Node.js 18+**。
 
-**1.** 侧栏 → **插件** → **添加插件** → 粘贴这个 → 安装 → 启用 → **重启 DSH**：
+**1.** 侧栏 → **插件** → **添加插件** → 填这个包名 → 安装 → 启用 → **重启 DSH**：
 
 ```
-https://github.com/OrderG-X/dsh-chrome-bridge/releases/latest/download/dsh-chrome-bridge.tgz
+dsh-chrome-bridge
 ```
+
+这是 npm 包：按包名装时，DSH 连不上 npm 官方源会自动改用国内镜像（npmmirror），不经过 GitHub。也可以粘贴发布包地址 `https://github.com/OrderG-X/dsh-chrome-bridge/releases/latest/download/dsh-chrome-bridge.tgz`，那样要能连上 GitHub。
 
 **2.** 插件首次加载会自己装好宿主（`~/.dsh/chrome-bridge`、`~/dsh-bridge-extension`，以及 Chrome `NativeMessagingHosts` 里的 `com.dsh.bridge.json`）。剩下只差把扩展装进 Chrome，两种装法选一个：
 
