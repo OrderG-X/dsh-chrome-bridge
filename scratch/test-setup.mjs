@@ -33,12 +33,12 @@ try {
 
   check('扩展已复制', fs.existsSync(path.join(p.extDir, 'manifest.json')))
   check('宿主已复制', fs.existsSync(path.join(p.hostDir, 'host.js')))
-  const runSh = fs.statSync(path.join(p.hostDir, 'run.sh'))
-  check('run.sh 可执行', (runSh.mode & 0o111) !== 0)
+  // Windows 上 Chrome 拉起的是装的时候现写的 run.bat，没有可执行位这回事
+  if (process.platform !== 'win32') check('run.sh 可执行', (fs.statSync(p.launcher).mode & 0o111) !== 0)
   check('扩展 ID 推导一致', extensionId(path.join(p.extDir, 'manifest.json')) === FIXED_EXT_ID)
 
   const reg = JSON.parse(fs.readFileSync(p.nmFile, 'utf8'))
-  check('注册 path 指向宿主', reg.path === path.join(p.hostDir, 'run.sh'), reg.path)
+  check('注册 path 指向宿主', reg.path === p.launcher, reg.path)
   check('allowed_origins 绑定扩展', reg.allowed_origins?.[0] === `chrome-extension://${FIXED_EXT_ID}/`, JSON.stringify(reg.allowed_origins))
   check('注册 name 正确', reg.name === 'com.dsh.bridge')
 
@@ -71,8 +71,10 @@ try {
 // ⑥ 重载只针对本地解压版：假 HOME + 假 socket 跑一遍 apply()，看插件发了哪些 op
 {
   const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-bridge-refresh-'))
-  const sock = path.join(fakeHome, 'bridge.sock')
+  // Windows 没有 Unix socket，用命名管道
+  const sock = process.platform === 'win32' ? `\\\\.\\pipe\\dsh-bridge-test-${process.pid}` : path.join(fakeHome, 'bridge.sock')
   process.env.HOME = fakeHome
+  process.env.USERPROFILE = fakeHome   // Windows 上 os.homedir() 看的是它
   process.env.DSH_BRIDGE_SOCK = sock
   process.env.DSH_BRIDGE_TOKEN = path.join(fakeHome, 'token')
   process.env.DSH_BRIDGE_DIR = fakeHome   // 插件的 trace 日志也落进假 HOME

@@ -10,7 +10,8 @@ import assert from 'node:assert'
 import fs from 'node:fs'
 import vm from 'node:vm'
 
-const src = fs.readFileSync(new URL('../plugin/vendor/extension/background.js', import.meta.url), 'utf8')
+// Windows 上 git 取出来是 CRLF，下面按 \n 找代码，先统一成 LF
+const src = fs.readFileSync(new URL('../plugin/vendor/extension/background.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
 const start = src.indexOf('const agentWindows = {')
 const end = src.indexOf('\nasync function ensure(')
 assert(start > 0 && end > start, 'background.js 里找不到干活窗口的代码')
@@ -246,7 +247,7 @@ await check('整个过程从不去聚焦窗口', async () => {
 })
 
 // ── 插件这边：tab="active" 挑哪一页 ──────────────────────────────────────────
-const idx = fs.readFileSync(new URL('../plugin/index.js', import.meta.url), 'utf8')
+const idx = fs.readFileSync(new URL('../plugin/index.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
 const um = /\nfunction userTab\(tabs\) \{\n[\s\S]*?\n\}\n/.exec(idx)
 assert(um, 'index.js 里找不到 userTab')
 const userTab = vm.runInNewContext(`(${um[0].trim()})`)

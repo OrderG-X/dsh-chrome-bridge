@@ -28,7 +28,7 @@ check('Windows 启动脚本是 run.bat', w.launcher.endsWith('run.bat'), w.launc
 check('Windows 注册文件放在宿主旁边', w.nmDir === w.bridge, w.nmDir)
 check('Windows 的 Chrome 目录', /Google.Chrome.User Data$/.test(w.chromeDir), w.chromeDir)
 const l = paths('/home/u', 'linux')
-check('Linux 注册目录', l.nmDir === '/home/u/.config/google-chrome/NativeMessagingHosts', l.nmDir)
+check('Linux 注册目录', l.nmDir === path.join('/home/u', '.config/google-chrome/NativeMessagingHosts'), l.nmDir)   // 测试跑在 Windows 上时分隔符是 \
 check('Mac 还是 run.sh', paths('/Users/u', 'darwin').launcher.endsWith('run.sh'))
 
 // ② run.bat
