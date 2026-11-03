@@ -2,7 +2,7 @@
  * dsh-chrome-bridge 的网页端：DSH「插件」页里我们这张卡的设置页。
  *
  *   连接状态（扩展 / 本地宿主、版本、正在控制哪些标签页）+ 全部松手
- *   两个开关：允许 DSH 控制浏览器（这里只能关）、页面里显示 DSH 光标
+ *   三个开关：允许 DSH 控制浏览器（这里只能关）、页面里显示 DSH 光标、新页开在单独窗口
  *   没连上时：差哪一步、一键帮你打开安装页
  *
  * 数据全走插件自己挂在 DSH webServer 上的路由（plugin/panel.js），每 2.5 秒刷一次。
@@ -56,6 +56,9 @@ window.__ModuleLoader__.load({
       resumeInChrome: '要恢复，请点 Chrome 工具栏上的 DSH Bridge 图标，打开「允许 DSH 控制浏览器」。',
       showCursor: '页面里显示 DSH 光标',
       showCursorHint: '关掉只是不画光标，点击、输入照做。',
+      ownWindow: '新页开在单独窗口',
+      ownWindowHint: 'DSH 新开的页放进一个单独的 Chrome 窗口（登录状态照样在），不往你正在用的窗口里塞标签页、不抢焦点。关掉就开在你当前窗口的后台。',
+      ownWindowOld: 'Chrome 里的扩展更新到 1.13 后才有这个开关；现在新页开在你当前窗口的后台。',
       outdated: 'Chrome 里的扩展版本较旧，更新后才能在这里切换开关。',
       setupTitle: '还差一步：把扩展装进 Chrome',
       setupStoreTitle: '扩展装了，但没连上',
@@ -98,6 +101,9 @@ window.__ModuleLoader__.load({
       resumeInChrome: 'To resume, click the DSH Bridge icon in Chrome\'s toolbar and turn on "Allow DSH to control the browser".',
       showCursor: 'Show the DSH cursor on pages',
       showCursorHint: 'Off only hides the cursor; clicks and typing still happen.',
+      ownWindow: 'Open new pages in a separate window',
+      ownWindowHint: 'Pages DSH opens go into their own Chrome window (same profile, so your logins work) instead of piling tabs into the window you are using, and never take focus. Off: they open as background tabs in your current window.',
+      ownWindowOld: 'This switch needs extension 1.13 or newer in Chrome; for now new pages open as background tabs in your current window.',
       outdated: 'The extension in Chrome is outdated; update it to change these switches here.',
       setupTitle: 'One step left: add the extension to Chrome',
       setupStoreTitle: 'The extension is installed but not connected',
@@ -294,7 +300,13 @@ window.__ModuleLoader__.load({
           h('div', { className: 'dcb-main' },
             h('div', { className: 'dcb-title' }, t('showCursor')),
             h('p', { className: 'dcb-hint' }, t('showCursorHint'))),
-          h(Toggle, { label: t('showCursor'), checked: state.showCursor !== false, disabled: !can, onChange: (on) => run({ action: 'cursor', on }) }))) : null
+          h(Toggle, { label: t('showCursor'), checked: state.showCursor !== false, disabled: !can, onChange: (on) => run({ action: 'cursor', on }) })),
+        // 商店里还没更新的老扩展没有这个设置（state 里没有 ownWindow）：照实说，开关不给点
+        state.outdated ? null : h('div', { className: 'dcb-row' },
+          h('div', { className: 'dcb-main' },
+            h('div', { className: 'dcb-title' }, t('ownWindow')),
+            h('p', { className: 'dcb-hint' }, 'ownWindow' in state ? t('ownWindowHint') : t('ownWindowOld'))),
+          h(Toggle, { label: t('ownWindow'), checked: state.ownWindow !== false && 'ownWindow' in state, disabled: !can || !('ownWindow' in state), onChange: (on) => run({ action: 'window', on }) }))) : null
 
       const notes = [
         error && !state ? { tone: 'err', text: t('unreachable') } : null,

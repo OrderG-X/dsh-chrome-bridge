@@ -26,6 +26,8 @@ const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-e2e-dsh-'
 if (LOCAL) {
   process.env.HOME = process.env.USERPROFILE = path.join(tmp, 'home')
   process.env.DSH_BRIDGE_DIR = path.join(tmp, 'run')
+  // 这几个会盖过 DSH_BRIDGE_DIR：清掉，免得测试去动真宿主的 socket / token / 日志
+  for (const k of ['DSH_BRIDGE_SOCK', 'DSH_BRIDGE_TOKEN', 'DSH_BRIDGE_LOG']) delete process.env[k]
   fs.mkdirSync(process.env.HOME, { recursive: true })
 }
 const env = { ...process.env, DSH_HOME: path.join(tmp, 'dsh-home'), npm_config_registry: REGISTRY }

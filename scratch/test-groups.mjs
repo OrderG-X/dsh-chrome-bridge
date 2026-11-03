@@ -22,10 +22,12 @@ function world({ tabs, groups }) {
   const chrome = {
     tabs: {
       get: async (id) => { const t = tabs[id]; if (!t) throw new Error('no tab'); return { id, ...t } },
-      group: async ({ tabIds: [id], groupId }) => {
+      // 和真 Chrome 一样：新建的组不写 createProperties.windowId 就建在「当前窗口」（这里是 1），标签页跟着挪过去
+      group: async ({ tabIds: [id], groupId, createProperties }) => {
         calls.push(['group', id, groupId])
         const gid = groupId ?? nextGroup++
-        if (!groups[gid]) groups[gid] = { id: gid, windowId: tabs[id].windowId, title: '' }
+        if (!groups[gid]) groups[gid] = { id: gid, windowId: (createProperties && createProperties.windowId) ?? 1, title: '' }
+        tabs[id].windowId = groups[gid].windowId
         tabs[id].groupId = gid
         tabs[id].pinned = false
         return gid
@@ -89,6 +91,13 @@ await check('别的窗口里的同名组不复用（不把标签页拽过去）'
   await w.ensureGroup(1)
   assert.notEqual(w.tabs[1].groupId, 3)
   assert.equal(w.groups[w.tabs[1].groupId].windowId, 2)
+})
+
+await check('不在当前窗口的标签页（比如干活窗口里的）：组建在它自己的窗口，不被拽到当前窗口', async () => {
+  const w = world({ tabs: { 1: { windowId: 4, groupId: -1 } }, groups: {} })
+  await w.ensureGroup(1)
+  assert.equal(w.tabs[1].windowId, 4)
+  assert.equal(w.groups[w.tabs[1].groupId].windowId, 4)
 })
 
 await check('记着的组被拖去别的窗口：不往那边塞', async () => {

@@ -1,8 +1,8 @@
 /**
  * DSH 插件页里那张设置卡的后端：一条 HTTP 路由，挂在 DSH 自己的 webServer 上。
  *
- *   GET  /dsh-chrome-bridge/panel            → 状态（连没连上、扩展版本、正在控制几个标签页、两个开关）
- *   POST /dsh-chrome-bridge/panel {action}   → pause（只能暂停）/ cursor / releaseAll / install，回新状态
+ *   GET  /dsh-chrome-bridge/panel            → 状态（连没连上、扩展版本、正在控制几个标签页、三个开关）
+ *   POST /dsh-chrome-bridge/panel {action}   → pause（只能暂停）/ cursor / window / releaseAll / install，回新状态
  *
  * 页面（client.js）跑在 DSH 的网页端，只能走 HTTP；这里再转成 socket 上的 `panel` 操作。
  * webServer 本身不做鉴权，而用户的 Chrome 里随便哪个网页都摸得到 127.0.0.1，所以自己把门：
@@ -114,6 +114,9 @@ export function panelHandler({ call, sock, origin, trace = () => {} }) {
           break
         case 'cursor':
           await call('panel', { action: 'cursor', on: !!body.on }, 8000)
+          break
+        case 'window':
+          await call('panel', { action: 'window', on: !!body.on }, 8000)
           break
         case 'releaseAll':
           await call('panel', { action: 'releaseAll' }, 15000)

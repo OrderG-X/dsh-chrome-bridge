@@ -29,6 +29,7 @@ What you get:
 • A visible cursor — every action draws an on-page cursor (with a small label saying what it is about to do) that also shows up in screenshots, so you can watch what the agent is doing.
 • A control panel — the toolbar popup shows the connection status, which tabs each agent session is holding, a live log of recent actions, a switch to pause all control, and a one-click "Release all".
 • Your session — you stay logged in; there is no separate automated browser and no cookie export.
+• Out of your way — pages the agent opens go into their own background window of your Chrome (same logins), so your window keeps its tabs and its focus. You can switch this off in the panel.
 • A permanent "DSH Bridge is debugging this browser" banner while attached — press Cancel on it and the bridge detaches instantly.
 
 Requirements (important):
@@ -92,6 +93,7 @@ DSH Bridge 让本机运行的 DSH（DeepSeek Harness）智能体直接操作你�
 • 看得见的光标 —— 每个操作都会在页面上画一个光标（带一个小标签，写着它要做什么），截图里也看得到，你能清楚看到智能体在干嘛。
 • 控制面板 —— 点工具栏图标能看到连接状态、每个智能体会话正在控制哪些标签页、最近操作的实时日志，还有一键暂停全部控制和「全部松手」。
 • 你的会话 —— 你一直保持登录；没有另开一个自动化浏览器，也不导出 Cookie。
+• 不打扰你 —— 智能体新开的页放进你 Chrome 里一个单独的后台窗口（登录状态一样），你自己的窗口不多标签页、焦点不动。不想要可以在面板里关掉。
 • 接管期间 Chrome 会一直显示「DSH Bridge 正在调试此浏览器」的提示条 —— 点上面的「取消」，桥接立刻断开。
 
 使用要求（重要）：

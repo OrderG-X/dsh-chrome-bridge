@@ -137,6 +137,9 @@ function renderSettings(st) {
   if (pause.checked !== !st.paused) pause.checked = !st.paused
   const showCursor = st.showCursor !== false
   if (cursor.checked !== showCursor) cursor.checked = showCursor
+  const win = document.querySelector('input[data-act="window"]')
+  const ownWindow = st.ownWindow !== false
+  if (win.checked !== ownWindow) win.checked = ownWindow
 }
 
 // ── 会话 ────────────────────────────────────────────────────────────────────
@@ -355,6 +358,9 @@ document.addEventListener('change', async (ev) => {
   } else if (input.dataset.act === 'cursor') {
     render(await ask('cursor', { on: input.checked }))
     toast(input.checked ? '页面里会显示 DSH 的光标' : '光标藏起来了，DSH 照常干活')
+  } else if (input.dataset.act === 'window') {
+    render(await ask('window', { on: input.checked }))
+    toast(input.checked ? 'DSH 新开的页会放进一个单独窗口' : 'DSH 新开的页会放在你当前窗口的后台')
   }
 })
 

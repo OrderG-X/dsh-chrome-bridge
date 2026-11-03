@@ -56,7 +56,11 @@ if (LOCAL || CJK) {
     for (const d of [process.env.APPDATA, process.env.TEMP]) fs.mkdirSync(d, { recursive: true })
   }
 }
-if (LOCAL) process.env.DSH_BRIDGE_DIR = path.join(tmpHome, 'run')
+if (LOCAL) {
+  process.env.DSH_BRIDGE_DIR = path.join(tmpHome, 'run')
+  // 这几个会盖过 DSH_BRIDGE_DIR：清掉，免得测试去动真宿主的 socket / token / 日志
+  for (const k of ['DSH_BRIDGE_SOCK', 'DSH_BRIDGE_TOKEN', 'DSH_BRIDGE_LOG']) delete process.env[k]
+}
 
 const { check, failed, summary } = checker()
 let browser = null
@@ -109,6 +113,7 @@ try {
   await new Promise((r) => server.listen(0, '127.0.0.1', r))
   const url = `http://127.0.0.1:${server.address().port}/`
 
+  const before = await cb(p.cb, 'tabs')
   const opened = await cb(p.cb, 'open', url)
   check('cb 开新标签页', Number.isInteger(opened.tabId), JSON.stringify(opened))
   let title = null
@@ -128,7 +133,41 @@ try {
   const ev = await tools.get('browser_eval').execute({ expression: "document.querySelector('#x').textContent", tab: String(opened.tabId) }, {})
   check('browser_eval 读到页面内容', String(ev.text).includes('你好，桥'), String(ev.text).slice(0, 300))
 
-  // ⑤ 下载文件、同源 iframe（见 e2e-features.mjs）
+  // ⑤ 新页开在单独窗口：用户的窗口不多标签页、焦点不动；再开进同一个窗口；关了窗口再开一个；开关关掉回到当前窗口
+  {
+    const userWin = before[0] && before[0].windowId
+    const all = await cb(p.cb, 'tabs')
+    const mine = all.find((t) => t.id === opened.tabId)
+    check('新页开进单独的干活窗口', opened.window === 'agent' && mine && mine.agentWindow && mine.windowId !== userWin, JSON.stringify(mine))
+    check('用户窗口里没多出标签页', all.filter((t) => t.windowId === userWin).length === before.filter((t) => t.windowId === userWin).length, JSON.stringify(all))
+    if (HEADED) check('焦点还在用户窗口', all.some((t) => t.windowId === userWin && t.focused) && !mine.focused, JSON.stringify(all))
+    const second = await tools.get('browser_tabs').execute({ action: 'open', url: url + '?2' }, {})
+    const id2 = Number((/标签页 (\d+)/.exec(second.text) || [])[1])
+    const all2 = await cb(p.cb, 'tabs')
+    const t2 = all2.find((t) => t.id === id2)
+    check('再开一页进同一个干活窗口（工具回话里说清楚）', t2 && t2.windowId === mine.windowId && second.text.includes('干活窗口'), second.text)
+    const list2 = await tools.get('browser_tabs').execute({ action: 'list' }, {})
+    check('列标签页时标出干活窗口', String(list2.text).includes('（DSH 干活窗口）'), String(list2.text).slice(0, 400))
+    const shot = await tools.get('browser_screenshot').execute({ tab: String(id2) }, {})
+    check('干活窗口在后面也能截图', !!shot && !shot.isError && !/失败|超时/.test(JSON.stringify(shot).slice(0, 300)), JSON.stringify(shot).slice(0, 300))
+    await cb(p.cb, 'close', String(opened.tabId))
+    await cb(p.cb, 'close', String(id2))
+    await sleep(500)
+    const again = await cb(p.cb, 'open', url + '?3')
+    const all3 = await cb(p.cb, 'tabs')
+    const t3 = all3.find((t) => t.id === again.tabId)
+    check('干活窗口被关掉后再开一个', again.window === 'agent' && t3 && t3.agentWindow && t3.windowId !== mine.windowId && t3.windowId !== userWin, JSON.stringify(t3))
+    const off = await cb(p.cb, 'window', 'off')
+    const plain = await cb(p.cb, 'open', url + '?4')
+    const all4 = await cb(p.cb, 'tabs')
+    const t4 = all4.find((t) => t.id === plain.tabId)
+    check('开关关掉：新页回到当前窗口后台', off.ownWindow === false && !plain.window && t4 && !t4.agentWindow && !t4.active, JSON.stringify(t4))
+    const on = await cb(p.cb, 'window', 'on')
+    check('开关能再打开', on.ownWindow === true, JSON.stringify(on))
+    await cb(p.cb, 'close', String(plain.tabId))
+  }
+
+  // ⑥ 下载文件、同源 iframe（见 e2e-features.mjs）
   await featureChecks({ check, tools, browserCdp: browser.cdp })
 } catch (e) {
   check('没有异常', false, e && e.stack || e)

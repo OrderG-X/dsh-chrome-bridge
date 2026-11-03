@@ -197,9 +197,12 @@ async function touchesOwnPage(op, args) {
 }
 /** 用户在弹窗里关了「页面里显示光标」：真实点击照做，只是不画那只蓝色光标 */
 let showCursor = true
-const prefsReady = chrome.storage.local.get(['paused', 'showCursor']).then((v) => {
+/** 用户关了「在单独窗口里干活」：新开的页回到用户当前窗口（后台标签页，不抢焦点） */
+let ownWindow = true
+const prefsReady = chrome.storage.local.get(['paused', 'showCursor', 'ownWindow']).then((v) => {
   paused = !!(v && v.paused)
   showCursor = !(v && v.showCursor === false)
+  ownWindow = !(v && v.ownWindow === false)
   updateBadge()
 }).catch(() => {})
 
@@ -408,7 +411,8 @@ async function ensureGroup(tabId) {
     } catch {}
   }
   try {
-    const gid = await chrome.tabs.group({ tabIds: [id] })
+    // 新建的组一定要指明在它自己的窗口：不写的话 Chrome 建在「当前窗口」，会把别的窗口里的标签页（比如干活窗口里的）拽过来
+    const gid = await chrome.tabs.group({ tabIds: [id], createProperties: { windowId: wid } })
     groupedTabs.set(id, gid)
     ourGroup.set(wid, gid)
     await chrome.tabGroups.update(gid, { title: GROUP_TITLE, color: 'blue' })
@@ -465,6 +469,97 @@ async function reconcileGroups() {
   } catch (e) {
     console.log('[dsh-bridge] 分组对账失败（不影响干活）:', String(e && e.message || e))
   }
+}
+
+// ── DSH 自己的干活窗口 ──────────────────────────────────────────────────────
+
+/**
+ * 新开的页默认放进一个单独的 Chrome 窗口：同一个用户资料，登录状态都在，但不往用户正在用的窗口里塞标签页。
+ * 窗口在后台开（不抢焦点），之后新开的页都进它；用户把它关了，下次再开一个。
+ * 普通和隐身各用各的：用户正在隐身窗口里，新页就开进隐身的干活窗口，不把隐身的事带进普通的 Cookie 和历史记录（反过来也一样）。
+ * 窗口 id 记在 storage.session：worker 被挂起再起来还认得；浏览器重启就清空（id 也变了）。
+ */
+const agentWindows = { normal: null, incognito: null }
+/** DSH 在干活窗口里开的标签页：用户自己拖进来的页不算，不能把它切走 */
+const agentTabs = new Set()
+const agentWindowReady = chrome.storage.session.get(['agentWindows', 'agentTabs']).then((v) => {
+  Object.assign(agentWindows, (v && v.agentWindows) || {})
+  for (const id of (v && v.agentTabs) || []) agentTabs.add(id)
+}).catch(() => {})
+
+function saveAgentWindows() {
+  chrome.storage.session.set({ agentWindows: { ...agentWindows }, agentTabs: [...agentTabs] }).catch(() => {})
+}
+
+function forgetAgentWindow(id) {
+  let changed = false
+  for (const k of Object.keys(agentWindows)) if (agentWindows[k] === id) { agentWindows[k] = null; changed = true }
+  if (changed) saveAgentWindows()
+}
+
+/** 这一种（normal / incognito）的干活窗口还在就回它的 id，没了（被关掉、浏览器重启过）回 null */
+async function agentWindow(mode) {
+  await agentWindowReady
+  const id = agentWindows[mode]
+  if (id == null) return null
+  try {
+    const w = await chrome.windows.get(id)
+    if (w && w.type === 'normal' && !!w.incognito === (mode === 'incognito')) return w.id
+  } catch {}
+  forgetAgentWindow(id)
+  return null
+}
+
+/** 现在还在的干活窗口（两种都算），列标签页时标出来用 */
+async function agentWindowIds() {
+  return new Set((await Promise.all(['normal', 'incognito'].map(agentWindow))).filter((id) => id != null))
+}
+
+/** 开页排队：两个会话同时开页时，后来的等前一个开完（窗口建好了）再往里加，不另开第二个窗口 */
+let agentWindowQueue = Promise.resolve()
+
+function openInAgentWindow(url) {
+  const run = agentWindowQueue.then(() => openInAgentWindowNow(url))
+  agentWindowQueue = run.catch(() => {})
+  return run
+}
+
+function rememberAgentTab(t) {
+  agentTabs.add(t.id)
+  saveAgentWindows()
+  return t
+}
+
+async function openInAgentWindowNow(url) {
+  // 用户最后在用的普通窗口：隐身与否跟它走，新窗口的大小也照它
+  let cur = null
+  try { cur = await chrome.windows.getLastFocused({ windowTypes: ['normal'] }) } catch {}
+  const incognito = !!(cur && cur.incognito)
+  const mode = incognito ? 'incognito' : 'normal'
+  const wid = await agentWindow(mode)
+  if (wid != null) {
+    try {
+      // 窗口里正显示的是 DSH 开的页就切到新页（偷看一眼就是最新的）；不动窗口焦点。
+      // 正显示的是用户自己拖进来的页：别把它切走，新页在后台开
+      const [shown] = await chrome.tabs.query({ windowId: wid, active: true })
+      return rememberAgentTab(await chrome.tabs.create({ windowId: wid, url, active: !shown || agentTabs.has(shown.id) }))
+    } catch (e) {
+      // 刚好在这一下被关掉了：下面重开一个。窗口还在就是别的错（比如网址不让开），照实报
+      if (await chrome.windows.get(wid).then(() => true, () => false)) throw e
+      forgetAgentWindow(wid)
+    }
+  }
+  // 跟用户当前窗口一样大、错开一点；最大化 / 全屏的不照抄，交给 Chrome 默认
+  const props = { url, focused: false, type: 'normal', incognito }
+  let w
+  if (cur && cur.state === 'normal' && cur.width && cur.height) {
+    try {
+      w = await chrome.windows.create({ ...props, left: cur.left + 40, top: cur.top + 40, width: cur.width, height: cur.height })
+    } catch {}   // 窗口贴着屏幕边，错开以后一半到了屏幕外，Chrome 不让开：交给它自己摆
+  }
+  if (!w) w = await chrome.windows.create(props)
+  agentWindows[mode] = w.id
+  return rememberAgentTab(w.tabs[0])
 }
 
 async function ensure(tabId) {
@@ -902,6 +997,8 @@ const OPS = {
       await setPaused(true, 'DSH 设置页')
     } else if (action === 'cursor') {
       await setShowCursor(!!on, 'DSH 设置页')
+    } else if (action === 'window') {
+      await setOwnWindow(!!on, 'DSH 设置页')
     } else if (action === 'releaseAll') {
       await releaseAllTabs()
     } else if (action !== 'state') {
@@ -910,7 +1007,7 @@ const OPS = {
     const st = await buildState()
     return {
       version: st.version, id: chrome.runtime.id, paused: st.paused, showCursor: st.showCursor,
-      attachedCount: st.attachedCount,
+      ownWindow: st.ownWindow, attachedCount: st.attachedCount,
       sessions: st.sessions.filter((x) => x.tabs.some((t) => t.attached)).length,
       tabs: [...st.sessions.flatMap((x) => x.tabs), ...st.orphans]
         .filter((t) => t.attached).slice(0, 8).map((t) => ({ title: t.title, url: t.url })),
@@ -940,10 +1037,15 @@ const OPS = {
 
   async tabs() {
     const tabs = await chrome.tabs.query({})
+    // 窗口不止一个时每个窗口都有一个 active：focused 标出用户最后在用的那个窗口，agentWindow 标出 DSH 的干活窗口
+    let focusedWin = null
+    try { focusedWin = (await chrome.windows.getLastFocused()).id } catch {}
+    const agentWins = await agentWindowIds()
     return tabs
       .filter(t => t.url && !t.url.startsWith('chrome-extension://'))
       .map(t => ({
         id: t.id, windowId: t.windowId, active: t.active, pinned: t.pinned,
+        focused: t.windowId === focusedWin, agentWindow: agentWins.has(t.windowId),
         title: t.title, url: t.url, attached: attached.has(t.id),
         // 这个标签页是不是被我们自动分进「🖱 DSH agent」组（面板和自检都用得上）
         grouped: groupedTabs.has(t.id), groupId: t.groupId >= 0 ? t.groupId : null,
@@ -974,7 +1076,12 @@ const OPS = {
   async open({ url, active = false }) {
     // 相对地址会被 tabs.create 按扩展自己的地址补全（example.com → chrome-extension://…/example.com），只收完整网址
     if (url) { try { new URL(url) } catch { throw new Error(`要给完整网址（带 https://）：${url}`) } }
-    // 默认后台开页：DSH 干活不该顶掉用户正在看的标签页
+    // 默认开进 DSH 自己的窗口（后台，不抢焦点）；用户关了「单独窗口」就在当前窗口后台开页。
+    // 两种都不顶掉用户正在看的标签页。active=true（cb open --front）是有意要它跳到眼前，照旧开在当前窗口
+    if (ownWindow && !active) {
+      const t = await openInAgentWindow(url)
+      return { tabId: t.id, url: t.pendingUrl || t.url || url || '', window: 'agent' }
+    }
     const t = await chrome.tabs.create({ url, active: !!active })
     return { tabId: t.id, url: t.url }
   },
@@ -1412,6 +1519,7 @@ async function buildState() {
     idleMs: DETACH_IDLE_MS,
     attachedCount: controlledCount(),
     showCursor,
+    ownWindow,
     sessions,
     orphans,
     activity: ACTIVITY.slice(-30).reverse().map((a) => ({
@@ -1434,7 +1542,7 @@ async function diagnostics() {
     `DSH Bridge ${st.version}（${chrome.runtime.id}）`,
     `浏览器：${navigator.userAgent}`,
     `宿主：${st.connected ? '已连接' : '没连上'}${h ? `，pid ${h.pid}，socket ${h.socketOk ? '在听' : '没在听'}（${h.socket}），已处理 ${h.served} 次请求` : ''}`,
-    `暂停：${st.paused ? '是' : '否'}；页内光标：${st.showCursor ? '显示' : '关闭'}；受控标签页：${st.attachedCount}`,
+    `暂停：${st.paused ? '是' : '否'}；页内光标：${st.showCursor ? '显示' : '关闭'}；新页开在：${st.ownWindow ? '单独窗口' : '当前窗口'}；受控标签页：${st.attachedCount}`,
     `会话：${st.sessions.map((s) => `${s.key}（${s.ops} 次操作，${s.errors} 次失败，${s.tabs.length} 个标签页）`).join('；') || '无'}`,
     '',
     '最近失败：',
@@ -1476,6 +1584,12 @@ async function setShowCursor(on, where) {
   }
 }
 
+async function setOwnWindow(on, where) {
+  ownWindow = !!on
+  await chrome.storage.local.set({ ownWindow })
+  log(`新开的页改成开在${ownWindow ? '单独窗口' : '当前窗口'}（${where}）`)
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !msg.popup || sender.id !== chrome.runtime.id) return
   const run = async () => {
@@ -1503,6 +1617,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return buildState()
       case 'cursor':
         await setShowCursor(!!msg.on, '弹窗')
+        return buildState()
+      case 'window':
+        await setOwnWindow(!!msg.on, '弹窗')
         return buildState()
       case 'diagnostics':
         return { text: await diagnostics() }
@@ -1540,5 +1657,9 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   tabEpoch.delete(tabId)
   dialogs.delete(tabId)
   failLoadWaiter(tabId, '标签页在加载中被关掉了')
+  if (agentTabs.delete(tabId)) saveAgentWindows()
+})
+chrome.windows.onRemoved.addListener((windowId) => {
+  forgetAgentWindow(windowId)   // 干活窗口被关了：下次新开页再开一个
 })
 connect()

@@ -263,10 +263,20 @@ function forgetTab(id) {
   for (const [k, v] of currentTab) if (v === Number(id)) currentTab.delete(k)
 }
 
+/**
+ * 用户正在看的那一页。窗口不止一个时每个窗口都有一个 active：先挑用户最后在用的窗口里的，
+ * 再挑不在 DSH 干活窗口里的。老扩展不给 focused / agentWindow，就退回第一个 active（以前的做法）。
+ */
+function userTab(tabs) {
+  return tabs.find((t) => t.active && t.focused) ||
+    tabs.find((t) => t.active && !t.agentWindow) ||
+    tabs.find((t) => t.active)
+}
+
 async function resolveTab(tab) {
   if (tab !== undefined && tab !== null && tab !== '') {
     if (String(tab) === 'active') {
-      const active = (await call('tabs')).find((t) => t.active)
+      const active = userTab(await call('tabs'))
       if (!active) throw new Error('没有活动标签页')
       rememberTab(active.id)
       return active.id
@@ -491,11 +501,12 @@ export function apply(ctx, config) {
       name: 'browser_tabs',
       description:
         '列出 / 查找 / 打开 / 关闭 / 切换 Chrome 标签页。其它 browser_* 工具都要 tab 参数，先用它拿 id。' +
-        '只对用户真实浏览器里已存在的页面生效，不会新开一个干净的浏览器。',
+        '用的是用户真实的 Chrome（登录状态都在），不会新开一个干净的浏览器。' +
+        'open 新开的页默认放进一个单独的「DSH 干活窗口」，在后台、不抢用户焦点，用户正在看的页面不受影响。',
       parameters: {
         action: {
           type: 'string', required: true, enum: ['list', 'find', 'open', 'close', 'activate'],
-          description: 'list 全部；find 按关键词过滤标题/URL；open 新开；close 关掉；activate 切到前台',
+          description: 'list 全部；find 按关键词过滤标题/URL；open 新开（默认进单独的干活窗口）；close 关掉；activate 切到前台（会把那个窗口带到用户眼前，没被要求就别用）',
         },
         query: { type: 'string', description: 'action=find 时的关键词（匹配标题或 URL）' },
         url: { type: 'string', description: 'action=open 时要打开的网址' },
@@ -507,9 +518,11 @@ export function apply(ctx, config) {
         switch (args.action) {
           case 'list': {
             const tabs = await call('tabs')
+            const mine = userTab(tabs)
             const lines = tabs.map((t) =>
-              `${t.active ? '*' : ' '} ${String(t.id).padStart(5)} ${(t.title || '').slice(0, 50)} — ${t.url.slice(0, 80)}`)
-            return { text: lines.join('\n') || '(没有标签页)' }
+              `${t === mine ? '*' : ' '} ${String(t.id).padStart(5)} ${(t.title || '').slice(0, 50)} — ${t.url.slice(0, 80)}${t.agentWindow ? '（DSH 干活窗口）' : ''}`)
+            const text = lines.join('\n') || '(没有标签页)'
+            return { text: lines.length ? `${text}\n（* = 用户正在看的页）` : text }
           }
           case 'find': {
             const q = String(args.query || '').toLowerCase()
@@ -523,7 +536,8 @@ export function apply(ctx, config) {
             if (!args.url) throw new Error('action=open 需要 url')
             const r = await call('open', { url: args.url })
             rememberTab(r.tabId)
-            return { text: `已打开标签页 ${r.tabId}：${r.url}` }
+            const where = r.window === 'agent' ? '（在单独的 DSH 干活窗口里，后台打开，没打扰用户正在看的页）' : '（后台标签页）'
+            return { text: `已打开标签页 ${r.tabId}${where}：${r.url}` }
           }
           case 'close': {
             const tabId = await resolveTab(args.tab)

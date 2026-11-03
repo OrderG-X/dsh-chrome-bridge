@@ -4,6 +4,9 @@ A DeepSeek Harness (DSH) plugin that drives the Chrome you already use: real cli
 
 让 DSH 直接操作你正在用的 Chrome：真点击、真输入，页面里看得到光标，登录状态都在。提供 12 个 `browser_*` 工具，走 native messaging 和 Chrome 调试接口，不开监听端口。
 
+Pages the agent opens go into a separate background window of your Chrome, so your own window keeps its tabs and focus.
+agent 新开的页放进你 Chrome 里一个单独的后台窗口，你自己的窗口不多标签页、焦点不动。
+
 ## Install / 安装
 
 1. In DSH, open **Plugins**, click **Add plugin**, enter `dsh-chrome-bridge`, then restart DSH.
