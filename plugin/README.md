@@ -19,8 +19,8 @@ Requirements: macOS, Windows or Linux, Chrome 116+, Node.js 18+.
 
 ## Updating / 更新
 
-Uninstall the plugin on the Plugins page and add it again. A new version can be installed by package name about a day after it is released, because the pnpm that DSH uses skips brand-new versions by default.
+On DSH 0.2.2 or later, open the plugin on the Plugins page and click "Update to …". On older DSH, uninstall it and add it again. A new version can be installed about a day after it is released, because the pnpm that DSH uses skips brand-new versions by default.
 
-在「插件」页把它卸载，再添加一次。DSH 用 pnpm 安装插件，而 pnpm 默认不装刚发布的版本，所以新版大约发布一天后，按包名才能装到。
+DSH 0.2.2 起，在「插件」页点开它，点「更新到 …」；更老的 DSH 先卸载，再添加一次。DSH 用 pnpm 安装插件，而 pnpm 默认不装刚发布的版本，所以新版大约发布一天后才装得到。
 
 Full documentation / 完整说明：https://github.com/OrderG-X/dsh-chrome-bridge

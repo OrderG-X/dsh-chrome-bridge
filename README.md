@@ -129,7 +129,7 @@ Until step 2 is done the `browser_*` tools fail **loudly with exactly these step
 
 > A freshly installed bundle is not hot-loaded; DSH must be restarted once.
 > `dsh plugin add` from the CLI refuses the app-managed profile — use the sidebar there.
-> Plugin updates are not automatic in DSH yet: to upgrade, uninstall and install again. A new version can be installed by package name about a day after release, because the pnpm that DSH uses skips brand-new versions by default; to get it right away, use the release tarball.
+> Updating: on DSH 0.2.2 or later, open the bundle on the Plugins page and click "Update to …"; on older DSH, uninstall and install again. A new version can be installed about a day after release, because the pnpm that DSH uses skips brand-new versions by default; to get it right away, use the release tarball (a tarball install can't use Update later).
 
 ### 👀 What you see while it works
 
