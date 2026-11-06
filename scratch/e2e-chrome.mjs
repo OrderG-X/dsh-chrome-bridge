@@ -106,7 +106,9 @@ try {
   if (WIN) check('宿主走 Windows 命名管道', String(status.socket).startsWith('\\\\.\\pipe\\'), status.socket)
 
   // ④ 真页面
-  server = http.createServer((req, res) => {
+  server = http.createServer(async (req, res) => {
+    // 第二页故意慢：服务器回第一个字节之前标签页的 url 是空的（地址在 pendingUrl），列标签页、不传 tab 接着用都得认得它
+    if (req.url.includes('?2')) await sleep(2000)
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
     res.end(`<!doctype html><title>${TITLE}</title><h1 id="x">你好，桥</h1>`)
   })
@@ -147,9 +149,9 @@ try {
     const t2 = all2.find((t) => t.id === id2)
     check('再开一页进同一个干活窗口（工具回话里说清楚）', t2 && t2.windowId === mine.windowId && second.text.includes('干活窗口'), second.text)
     const list2 = await tools.get('browser_tabs').execute({ action: 'list' }, {})
-    check('列标签页时标出干活窗口', String(list2.text).includes('（DSH 干活窗口）'), String(list2.text).slice(0, 400))
-    const shot = await tools.get('browser_screenshot').execute({ tab: String(id2) }, {})
-    check('干活窗口在后面也能截图', !!shot && !shot.isError && !/失败|超时/.test(JSON.stringify(shot).slice(0, 300)), JSON.stringify(shot).slice(0, 300))
+    check('列标签页时标出干活窗口（还没加载完的页也列出来）', String(list2.text).includes('（DSH 干活窗口）') && String(list2.text).includes('?2'), String(list2.text).slice(0, 400))
+    const shot = await tools.get('browser_screenshot').execute({}, {})   // 不传 tab：接着用刚开的页
+    check('干活窗口在后面也能截图（不传 tab 接着用刚开的页）', !!shot && !shot.isError && !/失败|超时/.test(JSON.stringify(shot).slice(0, 300)), JSON.stringify(shot).slice(0, 300))
     await cb(p.cb, 'close', String(opened.tabId))
     await cb(p.cb, 'close', String(id2))
     await sleep(500)

@@ -1041,12 +1041,15 @@ const OPS = {
     let focusedWin = null
     try { focusedWin = (await chrome.windows.getLastFocused()).id } catch {}
     const agentWins = await agentWindowIds()
+    // 刚开、服务器还没回第一个字节的页 url 是空的，要去的地址在 pendingUrl：不算上的话，刚开的慢页列不出来，
+    // 不传 tab 接着操作它也会报「没指定标签页」
     return tabs
-      .filter(t => t.url && !t.url.startsWith('chrome-extension://'))
-      .map(t => ({
+      .map(t => ({ t, url: t.url || t.pendingUrl || '' }))
+      .filter(({ url }) => url && !url.startsWith('chrome-extension://'))
+      .map(({ t, url }) => ({
         id: t.id, windowId: t.windowId, active: t.active, pinned: t.pinned,
         focused: t.windowId === focusedWin, agentWindow: agentWins.has(t.windowId),
-        title: t.title, url: t.url, attached: attached.has(t.id),
+        title: t.title, url, attached: attached.has(t.id),
         // 这个标签页是不是被我们自动分进「🖱 DSH agent」组（面板和自检都用得上）
         grouped: groupedTabs.has(t.id), groupId: t.groupId >= 0 ? t.groupId : null,
       }))
