@@ -116,8 +116,7 @@ function renderStatus(st) {
   let mood, icon, title, sub, extra = ''
   if (!st.connected) {
     mood = 'bad'; icon = 'bang'; title = '没连上本地宿主'; sub = 'DSH 现在用不了浏览器'
-    extra = `<p class="explain">多半是宿主没装好，或者 Node 换了位置。在终端里跑一下，跑完点右上角重新连接：</p>
-      <div class="cmd"><code>dsh-chrome-bridge update</code><button class="link" type="button" data-act="copyCmd">复制</button></div>`
+    extra = `<p class="explain">多半是 DSH 里还没装浏览器桥插件，或者装好后还没重启 DSH。装好、重启 DSH 后点右上角重新连接；还连不上就在 DSH 里让它用一下浏览器，它会说卡在哪一步。</p>`
   } else if (st.paused) {
     mood = 'warn'; icon = 'pause'; title = '已暂停'; sub = 'DSH 现在动不了你的浏览器'
   } else {
@@ -335,9 +334,6 @@ document.addEventListener('click', async (ev) => {
     case 'releaseAll':
       render(await ask('releaseAll'))
       toast('全部松手了')
-      break
-    case 'copyCmd':
-      copy('dsh-chrome-bridge update', '命令已复制，去终端粘贴运行')
       break
     case 'diagnostics': {
       const r = await ask('diagnostics')

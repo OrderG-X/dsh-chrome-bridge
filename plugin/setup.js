@@ -70,7 +70,7 @@ export function paths(home = os.homedir(), platform = process.platform) {
     home,
     bridge,
     hostDir,
-    // Chrome 拉起宿主用的脚本：Windows 是装的时候现写的 run.bat，其余是自带的 run.sh
+    // Chrome 拉起宿主用的脚本：装的时候现写（Windows run.bat，其余 run.sh），写进 DSH 自己的 node
     launcher: path.join(hostDir, win ? 'run.bat' : 'run.sh'),
     extDir,
     chromeDir,
@@ -186,6 +186,48 @@ export function winLauncher(execPath = process.execPath, electron = Boolean(proc
   ].join('\r\n')
 }
 
+/** 单引号包起来给 sh 用（路径里的单引号拆开转义） */
+const shQuote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`
+
+/**
+ * macOS / Linux 的宿主启动脚本。Chrome 拉起宿主时 PATH 很干净：nvm / fnm / volta / asdf / mise 装的 node 都不在里面，
+ * 只按固定路径找的话这些用户一装就连不上（issue #2）。所以和 Windows 一样，先用装的时候 DSH 自己的 node
+ * （桌面版是 Electron，要 ELECTRON_RUN_AS_NODE）；DSH 升级换了路径，插件下次加载会重写这个文件。
+ * 那个 node 没了再按固定路径和常见的版本管理器目录找；都找不到就把原因写进 launch-error.txt，DSH 报错时读出来给人看
+ * （Chrome 那边只知道「断开了」，stderr 谁也看不到）。
+ */
+export function unixLauncher(execPath = process.execPath, electron = Boolean(process.versions.electron)) {
+  return [
+    '#!/bin/sh',
+    '# Chrome 通过这个脚本拉起原生宿主。浏览器桥插件装的时候现写的，别手改（DSH 下次加载会重写）。',
+    '',
+    'HERE="$(cd "$(dirname "$0")" && pwd)"',
+    'ERR="$HERE/launch-error.txt"',
+    `DSH_NODE=${shQuote(execPath)}`,
+    'go() { N="$1"; shift; rm -f "$ERR"; exec "$N" "$HERE/host.js" "$@"; }',
+    '',
+    'if [ -n "$DSH_BRIDGE_NODE" ] && [ -x "$DSH_BRIDGE_NODE" ]; then go "$DSH_BRIDGE_NODE" "$@"; fi',
+    `if [ -x "$DSH_NODE" ]; then ${electron ? 'export ELECTRON_RUN_AS_NODE=1; ' : ''}go "$DSH_NODE" "$@"; fi`,
+    '',
+    'for N in /usr/local/bin/node "$HOME/.local/bin/node" /opt/homebrew/bin/node /usr/bin/node \\',
+    '  "$HOME/.volta/bin/node" "$HOME/.asdf/shims/node" "$HOME/.local/share/mise/shims/node"; do',
+    '  if [ -x "$N" ]; then go "$N" "$@"; fi',
+    'done',
+    'for N in "$HOME"/.nvm/versions/node/*/bin/node; do',
+    '  if [ -x "$N" ]; then LAST="$N"; fi',
+    'done',
+    'if [ -n "$LAST" ]; then go "$LAST" "$@"; fi',
+    'N="$(command -v node 2>/dev/null)"',
+    'if [ -n "$N" ]; then go "$N" "$@"; fi',
+    '',
+    'MSG="找不到可用的 node：装插件时 DSH 用的 $DSH_NODE 已经不在了，常见位置也都没有。重启一次 DSH 会按它现在用的 node 重写启动脚本。"',
+    'echo "$MSG" > "$ERR" 2>/dev/null',
+    'echo "dsh-bridge: $MSG" >&2',
+    'exit 1',
+    '',
+  ].join('\n')
+}
+
 /** 装好了没有（只看落盘结果，不管 Chrome 有没有加载扩展）。 */
 export function installState(home = os.homedir()) {
   const p = paths(home)
@@ -243,18 +285,20 @@ export function ensureInstalled(options = {}) {
 
     let nmPrev = null
     try { nmPrev = fs.readFileSync(p.nmFile, 'utf8') } catch {}
-    const launcherBody = win ? winLauncher() : null
+    const launcherBody = win ? winLauncher() : unixLauncher()
     let launcherPrev = null
-    if (win) try { launcherPrev = fs.readFileSync(p.launcher, 'utf8') } catch {}
-    const winOk = !win || (launcherPrev === launcherBody && REG_KEYS.every((k) => regValue(k) === p.nmFile))
-    const upToDate = prev === stamp && nmPrev === nmBody && winOk && allPresent(vExt, p.extDir) && allPresent(vHost, p.hostDir)
+    try { launcherPrev = fs.readFileSync(p.launcher, 'utf8') } catch {}
+    const regOk = !win || REG_KEYS.every((k) => regValue(k) === p.nmFile)
+    const upToDate = prev === stamp && nmPrev === nmBody && launcherPrev === launcherBody && regOk
+      && allPresent(vExt, p.extDir) && allPresent(vHost, p.hostDir)
     if (!upToDate) {
       fs.mkdirSync(p.extDir, { recursive: true })
       fs.cpSync(vExt, p.extDir, { recursive: true, force: true })
       fs.mkdirSync(p.hostDir, { recursive: true })
       fs.cpSync(vHost, p.hostDir, { recursive: true, force: true })
-      if (win) fs.writeFileSync(p.launcher, launcherBody)
-      else fs.chmodSync(p.launcher, 0o755)
+      fs.writeFileSync(p.launcher, launcherBody)
+      if (!win) fs.chmodSync(p.launcher, 0o755)
+      fs.rmSync(path.join(p.hostDir, 'launch-error.txt'), { force: true })   // 上回拉不起来的原因：脚本重写了就作废
       fs.mkdirSync(p.nmDir, { recursive: true })
       fs.writeFileSync(p.nmFile, nmBody)
       if (win) {
@@ -312,6 +356,9 @@ export function installHint(home = os.homedir()) {
       '重启一次 DSH 会再试一遍；还不行就在 GitHub 提 issue。',
     ].join('\n')
   }
+  let launchErr = ''
+  try { launchErr = fs.readFileSync(path.join(s.hostDir, 'launch-error.txt'), 'utf8').trim() } catch {}
+  if (launchErr) return `Chrome 拉起宿主失败：${launchErr}\n重启 DSH 之后，完全退出 Chrome 再打开一次。`
   if (s.store) {
     return [
       `扩展已经从 Chrome 应用商店装好了（DSH Bridge ${s.store.version}），但宿主没连上：`,

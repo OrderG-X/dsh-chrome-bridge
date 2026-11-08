@@ -6,6 +6,8 @@
  *   ④ 报错文案确实给出「还差 chrome://extensions 那一次点选」
  *   ⑤ 商店版：注册文件放行商店 ID；装了商店版就不再让人「加载已解压」
  *   ⑥ 插件启动时只重载本地解压版扩展，商店版版本号对不上也不碰它（假 socket，不碰真 Chrome）
+ *   ⑦ macOS / Linux 的 run.sh 是装的时候现写的：写进 DSH 自己的 node（nvm 这类 Chrome 找不到的也能用）；
+ *      DSH 换了 node 会重写；Chrome 拉不起宿主时把原因写下来，报错文案读得到
  *
  * 跑法：node scratch/test-setup.mjs      （不碰真实 HOME，也不碰真实 Chrome 目录）
  */
@@ -14,7 +16,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import net from 'node:net'
 import path from 'node:path'
-import { ensureInstalled, extensionId, installHint, installState, paths, STORE_EXT_IDS, STORE_URL } from '../plugin/setup.js'
+import { execFileSync } from 'node:child_process'
+import { ensureInstalled, extensionId, installHint, installState, paths, STORE_EXT_IDS, STORE_URL, unixLauncher } from '../plugin/setup.js'
 
 const FIXED_EXT_ID = 'mhlkjkblmdleplggfengldbdmkabloce'
 let failures = 0
@@ -66,6 +69,54 @@ try {
   check('商店版报错给出启用/重启引导', storeHint.includes('启用') && storeHint.includes('商店'), storeHint)
 } finally {
   fs.rmSync(home, { recursive: true, force: true })
+}
+
+// ⑦ run.sh（Windows 的 run.bat 在 test-win.mjs 里测）
+if (process.platform !== 'win32') {
+  const home2 = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-bridge-launcher-'))
+  try {
+    const p = paths(home2)
+    ensureInstalled({ home: home2 })
+    const sh = fs.readFileSync(p.launcher, 'utf8')
+    check('run.sh 写进了 DSH 自己的 node', sh.includes(`DSH_NODE='${process.execPath}'`), sh.split('\n').find((l) => l.startsWith('DSH_NODE')))
+    check('run.sh 是合法的 sh', (() => { try { execFileSync('/bin/sh', ['-n', p.launcher]); return true } catch { return false } })())
+    const quoted = unixLauncher("/Users/o'neil/my node/bin/node", false)
+    check('路径里有单引号、空格也照样引对', (() => {
+      const f = path.join(home2, 'q.sh')
+      fs.writeFileSync(f, `${quoted.split('\n').filter((l) => l.startsWith('DSH_NODE=')).join('\n')}\nprintf %s "$DSH_NODE"\n`)
+      return execFileSync('/bin/sh', [f], { encoding: 'utf8' }) === "/Users/o'neil/my node/bin/node"
+    })())
+    check('Electron 才设 ELECTRON_RUN_AS_NODE', unixLauncher('/x', true).includes('ELECTRON_RUN_AS_NODE=1') && !unixLauncher('/x', false).includes('ELECTRON_RUN_AS_NODE'))
+    // DSH 换了 node（升级 / 换了 nvm 版本）：下次加载要重写
+    fs.writeFileSync(p.launcher, unixLauncher('/old/node', false))
+    const again = ensureInstalled({ home: home2 })
+    check('node 换了就重写 run.sh', again.changed === true && fs.readFileSync(p.launcher, 'utf8') === sh)
+    check('重写后还是可执行', (fs.statSync(p.launcher).mode & 0o111) !== 0)
+    // Chrome 拉不起宿主：真跑一次，装时的 node 和别处都找不到（PATH 清空、HOME 换成空目录、固定路径换掉）
+    const broken = unixLauncher('/no/such/node', false)
+      .replace(/\/usr\/local\/bin\/node|\/opt\/homebrew\/bin\/node|\/usr\/bin\/node/g, '/nonexistent')
+      .replace('N="$(command -v node 2>/dev/null)"', 'N=""')
+    fs.writeFileSync(p.launcher, broken, { mode: 0o755 })
+    let code = 0
+    try { execFileSync(p.launcher, [], { env: { HOME: home2, PATH: '/usr/bin:/bin' }, stdio: 'ignore' }) } catch (e) { code = e.status }
+    const errFile = path.join(p.hostDir, 'launch-error.txt')
+    check('找不到 node：退出码 1、原因写进 launch-error.txt', code === 1 && fs.readFileSync(errFile, 'utf8').includes('找不到可用的 node'), code)
+    const hint = installHint(home2)
+    check('报错文案读出拉不起来的原因', hint.includes('找不到可用的 node') && hint.includes('重启 DSH'), hint)
+    // 能拉起来时把旧的原因删掉（不真起宿主：host.js 换成立刻退出的空脚本）
+    fs.writeFileSync(p.launcher, unixLauncher(process.execPath, false), { mode: 0o755 })
+    const hostJs = path.join(p.hostDir, 'host.js')
+    const realHost = fs.readFileSync(hostJs)
+    fs.writeFileSync(hostJs, '')
+    try { execFileSync(p.launcher, [], { env: { HOME: home2, PATH: '/usr/bin:/bin' }, stdio: 'ignore' }) } finally { fs.writeFileSync(hostJs, realHost) }
+    check('拉起来了就删掉旧的失败原因', !fs.existsSync(errFile))
+    fs.writeFileSync(errFile, '旧的失败原因')
+    fs.writeFileSync(p.launcher, unixLauncher('/old/node', false))
+    ensureInstalled({ home: home2 })
+    check('DSH 重写启动脚本时也删掉旧的失败原因', !fs.existsSync(errFile))
+  } finally {
+    fs.rmSync(home2, { recursive: true, force: true })
+  }
 }
 
 // ⑥ 重载只针对本地解压版：假 HOME + 假 socket 跑一遍 apply()，看插件发了哪些 op
