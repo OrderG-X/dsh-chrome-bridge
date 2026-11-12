@@ -14,6 +14,8 @@
  *     --browser    edge：用 Microsoft Edge（Windows 上插件也给它写了注册）
  *     --cjk-home   用户目录换成带中文和空格的路径（模拟「C:\Users\张三」）
  * 用 Electron 跑（ELECTRON_RUN_AS_NODE=1 electron scratch/e2e-chrome.mjs）就是 DSH 桌面版的情形：宿主用 DSH 自己的程序拉起。
+ *   Windows 上再给 DSH_E2E_NODE（一个真 node.exe）：模拟 DSH 自带的独立 node，看宿主换成复制到宿主目录的那份、
+ *   旧的（Electron 跑的）宿主被换下、扩展重连上（issue #3：宿主别占着 DSH 安装目录）。
  * CHROME_BIN 可指定 Chrome 路径。
  */
 
@@ -21,6 +23,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import http from 'node:http'
+import { execFileSync } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { WIN, OS, FIXED_EXT_ID, sleep, checker, browserBin, launchBrowser, cb, dumpLogs } from './e2e-lib.mjs'
 import { featureChecks } from './e2e-features.mjs'
@@ -68,7 +71,7 @@ let server = null
 
 try {
   // ① 自动安装
-  const { ensureInstalled, installState, paths, REG_KEYS, regValue } = await import(pathToFileURL(path.join(ROOT, 'plugin/setup.js')))
+  const { ensureInstalled, installState, paths, REG_KEYS, regValue, listStaleHosts, hostProbe } = await import(pathToFileURL(path.join(ROOT, 'plugin/setup.js')))
   const inst = ensureInstalled()
   check('自动安装成功', inst.ok, inst.reason)
   const st = installState()
@@ -104,6 +107,75 @@ try {
   }
   if (!check('浏览器拉起宿主、扩展连上', status && status.extConnected, lastErr || JSON.stringify(status))) throw new Error('宿主没连上')
   if (WIN) check('宿主走 Windows 命名管道', String(status.socket).startsWith('\\\\.\\pipe\\'), status.socket)
+
+  // ③b Windows 桌面版：DSH 有独立 node 时，宿主换成复制到宿主目录的那份，旧的（DSH 程序跑的）自动换下（issue #3）
+  if (WIN && process.versions.electron && process.env.DSH_E2E_NODE) {
+    const images = () => {
+      const ps = "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.ExecutablePath -and $_.CommandLine.ToLowerInvariant().Contains($env:DSH_BRIDGE_HOSTJS.ToLowerInvariant()) } | ForEach-Object { $_.ExecutablePath }"
+      const out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `[Console]::OutputEncoding = [Text.Encoding]::UTF8; ${ps}`],
+        { env: { ...process.env, DSH_BRIDGE_HOSTJS: path.join(p.hostDir, 'host.js') }, encoding: 'utf8', windowsHide: true })
+      return out.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)
+    }
+    const same = (a, b) => a.toLowerCase() === b.toLowerCase()
+    // 从真实的升级起点开始：换成 1.16.3 一字不差的 run.bat（没有 & exit /b，宿主一退 cmd 会接着读文件），
+    // 把现在的宿主连同它的 cmd 结束，让 Chrome 按这个老脚本重新拉起
+    const v1163 = ['@echo off', 'chcp 65001 >nul', 'setlocal', 'set ELECTRON_RUN_AS_NODE=1', `set "N=${process.execPath}"`,
+      'if defined DSH_BRIDGE_NODE set "N=%DSH_BRIDGE_NODE%"', 'if not exist "%N%" for %%I in (node.exe) do set "N=%%~$PATH:I"', '"%N%" "%~dp0host.js" %*', ''].join('\r\n')
+    fs.writeFileSync(p.launcher, v1163)
+    const trees = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine.ToLowerInvariant().Contains($env:DSH_BRIDGE_HOSTJS.ToLowerInvariant()) } | ForEach-Object { $_.ParentProcessId }"],
+      { env: { ...process.env, DSH_BRIDGE_HOSTJS: path.join(p.hostDir, 'host.js') }, encoding: 'utf8', windowsHide: true }).split(/\s+/).filter(Boolean)
+    for (const pid of trees) { try { execFileSync('taskkill', ['/pid', pid, '/T', '/F'], { stdio: 'ignore' }) } catch {} }
+    let before = []
+    let st0 = null
+    for (let i = 0; i < 30; i++) {
+      await sleep(1000)
+      try { before = images(); st0 = await cb(p.cb, 'status') } catch (e) { lastErr = e.message }
+      if (before.length && st0 && st0.extConnected) break
+    }
+    check('旧脚本（1.16.3 原样）：宿主用 DSH 的程序（Electron）跑', before.some((x) => same(x, process.execPath)) && st0 && st0.extConnected, `${before.join(' | ')} ${lastErr || JSON.stringify(st0)}`)
+    let listed = []
+    try { listed = await listStaleHosts(p.hostDir, path.join(p.hostDir, 'node-none.exe')) } catch (e) { lastErr = e.message }
+    const me = listed.find((h) => st0 && h.pid === st0.pid)
+    check('列旧宿主：认出它、拉起它的 cmd、创建时刻，只有这一个浏览器连着', !!me && me.cmd > 0 && me.created > 0 && me.hosts === 1, `${JSON.stringify(listed)} ${lastErr || ''}`)
+    const ver = execFileSync(process.env.DSH_E2E_NODE, ['-p', 'process.versions.node'], { encoding: 'utf8' }).trim()
+    const rt = path.join(os.homedir(), '.dsh', 'dsh-runtimes', 'dsh-primary-runtime')
+    fs.mkdirSync(path.join(rt, 'dependencies', 'node', 'bin'), { recursive: true })
+    fs.copyFileSync(process.env.DSH_E2E_NODE, path.join(rt, 'dependencies', 'node', 'bin', 'node.exe'))
+    fs.writeFileSync(path.join(rt, 'runtime.json'), JSON.stringify({ desktopVersion: '0.0.0-e2e', platform: 'win32', arch: process.arch, node: ver }))
+    // 和插件里一样问占着管道的宿主（插件里走 call，这里走 cb）
+    const probe = hostProbe(() => cb(p.cb, 'status'))
+    const again = ensureInstalled({ log: (m) => console.log(`  ${m}`), probe })
+    const copy = path.join(p.hostDir, `node-v${ver}.exe`)
+    check('DSH 有独立 node：复制到宿主目录', again.ok && again.changed && fs.existsSync(copy), again.reason || copy)
+    const bat2 = fs.readFileSync(p.launcher, 'utf8')
+    check('run.bat 先用复制的 node、没了再退回 DSH 的程序', bat2.includes(`set "N=%~dp0${path.basename(copy)}"`) && bat2.includes(`if not exist "%N%" set "N=${process.execPath}"`), bat2)
+    // 旧的 cmd（跑着改写前的 run.bat）也得一起走：不然宿主一退它接着读新文件，又用 DSH 的程序拉起一个（CI 实测过）
+    const cmds = () => execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', "@(Get-CimInstance Win32_Process -Filter \"Name='cmd.exe'\" | Where-Object { $_.CommandLine -and $_.CommandLine.ToLowerInvariant().Contains($env:DSH_BRIDGE_RUNBAT.ToLowerInvariant()) }).Count"],
+      { env: { ...process.env, DSH_BRIDGE_RUNBAT: p.launcher }, encoding: 'utf8', windowsHide: true }).trim()
+    let now = []
+    let st2 = null
+    for (let i = 0; i < 70; i++) {   // 要连续闲一阵（扩展 5 秒没消息）、列两遍进程，再等扩展重连
+      await sleep(1000)
+      try { now = images(); st2 = await cb(p.cb, 'status') } catch (e) { lastErr = e.message }
+      if (now.length && now.every((x) => same(x, copy)) && st2 && st2.extConnected) break
+    }
+    check('旧宿主换下了，扩展重连上新宿主', now.length > 0 && now.every((x) => same(x, copy)) && st2 && st2.extConnected, `${now.join(' | ')} ${lastErr || JSON.stringify(st2)}`)
+    check('DSH 的程序不再跑宿主（不占 DSH 安装目录）', !now.some((x) => same(x, process.execPath)), now.join(' | '))
+    let nCmd = ''
+    try { nCmd = cmds() } catch (e) { nCmd = e.message }
+    check('只剩一个 cmd 在跑 run.bat（旧的跟着宿主一起走了）', nCmd === '1', nCmd)
+    check('换完了：「还有旧宿主要换」的记号删掉', !fs.existsSync(path.join(p.hostDir, 'restart-hosts.pending')), fs.readdirSync(p.hostDir).join(', '))
+    if (!now.every((x) => same(x, copy))) {
+      // 没换成：打出宿主和拉起它的 cmd 的命令行
+      const diag = "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine.ToLowerInvariant().Contains($env:DSH_BRIDGE_HOSTJS.ToLowerInvariant()) } | ForEach-Object { $pp = Get-CimInstance Win32_Process -Filter \"ProcessId=$($_.ParentProcessId)\"; \"HOST $($_.ProcessId): $($_.CommandLine)\"; \"PARENT $($_.ParentProcessId): $($pp.CommandLine)\" }"
+      try {
+        console.log(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `[Console]::OutputEncoding = [Text.Encoding]::UTF8; ${diag}`],
+          { env: { ...process.env, DSH_BRIDGE_HOSTJS: path.join(p.hostDir, 'host.js') }, encoding: 'utf8', windowsHide: true }))
+      } catch (e) { console.log(`诊断失败：${e.message}`) }
+      console.log(`宿主目录：${fs.readdirSync(p.hostDir).join(', ')}`)
+      console.log(`run.bat：${JSON.stringify(fs.readFileSync(p.launcher, 'utf8'))}`)
+    }
+  }
 
   // ④ 真页面
   server = http.createServer(async (req, res) => {

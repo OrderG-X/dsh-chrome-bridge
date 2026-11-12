@@ -1,6 +1,6 @@
 /**
  * 图片限额守卫的离线测试：不跑 DSH，直接把 plugin/index.js 挂上的
- * request-error 监听器 / image-offload 投影拿出来验。
+ * request-error 监听器拿出来验；投影归内置 dsh-compaction-image-offload，我们不注册（issue #4）。
  *
  *   node scratch/test-image-guard.mjs
  */
@@ -74,7 +74,6 @@ function hook(ctx, session) {
   ]
   const ctx = makeCtx()
   apply(ctx, {})
-  assert.deepStrictEqual(ctx.sessions.messageProjections.map((p) => p.type), ['image/offload'], '应自己注册投影')
 
   const session = makeSession(events)
   const { result, nextCalled } = hook(ctx, session)
@@ -87,23 +86,7 @@ function hook(ctx, session) {
     { seq: 2, imageIndexes: [0, 1, 2, 3, 4, 5, 6, 7] },
   ])
 
-  // 投影：被选中的图片要变成 offloaded: true，其它块原样
-  const projection = ctx.sessions.messageProjections[0]
-  const event = { type: 'image/offload', data: session.appended[0].data }
-  const projected = projection.project(event, {
-    nodes: events.map((e) => e.seq),
-    events,
-    baseSeq: 1,
-    messages: new Map(events.map((e) => [e.seq, { ...e.data, content: e.content }])),
-  })
-  const m2 = projected.get(2)
-  assert.strictEqual(m2.content.filter((b) => b.type === 'image' && b.offloaded === true).length, 8, 'seq 2 应有 8 张被卸下')
-  assert.strictEqual(m2.content.filter((b) => b.type === 'image' && b.offloaded !== true).length, 52, '其余图片不动')
-  assert.strictEqual(m2.content[0].type, 'text', '文本块不动')
-  const m1 = projected.get(1)
-  assert.strictEqual(m1.content[1].offloaded, true, 'seq 1 那张也要卸下')
-  assert.strictEqual(Object.isFrozen(m1.content[1]), true, '投影结果要冻结')
-  console.log('① 超限卸 9 张 + 投影标记 ✓')
+  console.log('① 超限卸 9 张 ✓')
 }
 
 // ② 已卸下的图片不重复计数（索引仍要数上它们）
@@ -166,16 +149,23 @@ function hook(ctx, session) {
   console.log('⑤ append 报错时放行 ✓')
 }
 
-// ⑥ 内置插件已经注册过投影：不能因为重名把插件搞挂
+// ⑥ 投影交给内置插件：自己一概不注册（抢先注册会让内置的 dsh-compaction-image-offload 撞名起不来，issue #4）
 {
-  const ctx = makeCtx({ alreadyRegistered: true })
-  apply(ctx, {})
-  assert.strictEqual(ctx.sessions.messageProjections.length, 1, '不该重复注册')
-  const events = [{ seq: 1, type: 'tool/result', data: { message: {} }, content: [image(false)] }]
-  const session = makeSession(events)
-  const { result } = hook(ctx, session)
-  assert.deepStrictEqual(await result, { kind: 'retry' })
-  console.log('⑥ 投影已存在时不重复注册 ✓')
+  for (const alreadyRegistered of [false, true]) {
+    const ctx = makeCtx({ alreadyRegistered })
+    const before = ctx.sessions.messageProjections.length
+    let calls = 0
+    const orig = ctx.sessions.registerMessageProjection
+    ctx.sessions.registerMessageProjection = (p) => { calls++; return orig(p) }
+    apply(ctx, {})
+    assert.strictEqual(calls, 0, '不该注册投影')
+    assert.strictEqual(ctx.sessions.messageProjections.length, before)
+    const events = [{ seq: 1, type: 'tool/result', data: { message: {} }, content: [image(false)] }]
+    const session = makeSession(events)
+    const { result } = hook(ctx, session)
+    assert.deepStrictEqual(await result, { kind: 'retry' })
+  }
+  console.log('⑥ 不注册投影，交给内置插件 ✓')
 }
 
 console.log('\n全部通过')

@@ -8,10 +8,10 @@
  * 只按字节数预检、不管张数，于是错误直接砸到会话上，且每次重发还是那么多张 ——
  * 会话就此卡死，只能新开会话。
  *
- * 这个模块补上两件事：
- *   1. 自己认这个错，记一条 `image/offload` 决策（卸掉最老的 N 张），让 loop 重试；
- *   2. 如果内置的投影插件没挂（`image/offload` 无人解释，append 会直接抛错），
- *      就把那份纯投影定义自己注册上 —— 语义和内置那份保持一致。
+ * 这个模块只补一件事：自己认这个错，记一条 `image/offload` 决策（卸掉最老的 N 张），让 loop 重试。
+ * 解释这条决策的投影由内置 dsh-compaction-image-offload 注册（dsh-base 里一定有）。我们不再自己注册：
+ * 以前抢先注册了同名投影，内置插件注册时撞名、整个没启动，它的两个兜底监听也跟着没了（issue #4）。
+ * 万一真没有这个投影，append 会抛错，下面接住、交给下游，和没装这个插件一样。
  *
  * 不 import 任何外部包：profile 上下文里 `@deepseek-ai/*` 解析不可靠（踩过）。
  */
@@ -21,48 +21,6 @@ const IMAGE_LIMIT_RE = /too many images in request[^0-9]*(\d+)\s*>\s*(\d+)/i
 const OFFLOAD_MARGIN = 8
 
 // ── 选谁卸：按请求顺序找最老的、还没卸下的图片出现位置 ──────────────────────
-
-function isRecord(value) {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function isIndex(value) {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && !Object.is(value, -0)
-}
-
-function deepFreeze(value) {
-  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
-    Object.freeze(value)
-    for (const child of Object.values(value)) deepFreeze(child)
-  }
-  return value
-}
-
-/** 把一条消息里指定的图片出现位置标成已卸下（索引要数上已卸下的那些）。 */
-function offloadMessageImages(message, indexes) {
-  let imageIndex = 0
-  let selected = 0
-  const visit = (blocks) => {
-    let next
-    for (const [index, block] of blocks.entries()) {
-      let projected = block
-      if (block.type === 'image') {
-        if (imageIndex === indexes[selected]) {
-          if (block.offloaded === true) throw new Error(`image/offload: image index ${imageIndex} is already offloaded`)
-          projected = { ...block, offloaded: true }
-          selected += 1
-        }
-        imageIndex += 1
-      }
-      if (projected !== block) next ??= blocks.slice(0, index)
-      if (next) next.push(projected)
-    }
-    return next ?? blocks
-  }
-  const content = visit(message.content)
-  if (selected !== indexes.length) throw new Error(`image/offload: image index ${indexes[selected]} does not exist`)
-  return deepFreeze({ ...message, content })
-}
 
 /** 这次失败要卸下几张图；不是图片超限就返回 0。 */
 export function imagesToOffload(failure) {
@@ -102,66 +60,14 @@ export function offloadOldestImages(session, count) {
   return marked
 }
 
-// ── 投影：和内置 dsh-compaction-image-offload 的纯定义同语义 ────────────────
-
-/** 实时创建 / 恢复 / fork 都用它解释 `image/offload` 事件。 */
-export const imageOffloadProjection = {
-  type: 'image/offload',
-  project(event, context) {
-    const data = event.data
-    if (!isRecord(data) || Object.keys(data).length !== 1 || !Array.isArray(data.targets) || data.targets.length === 0) {
-      throw new Error('image/offload: data must contain a nonempty targets array')
-    }
-    const messages = new Map()
-    const nodes = new Set(context.nodes)
-    for (const target of data.targets) {
-      if (!isRecord(target) || Object.keys(target).length !== 2 || !isIndex(target.seq) ||
-          !Array.isArray(target.imageIndexes) || target.imageIndexes.length === 0) {
-        throw new Error('image/offload: each target must contain a seq and nonempty imageIndexes')
-      }
-      const seq = target.seq
-      if (messages.has(seq)) throw new Error(`image/offload: duplicate target seq ${seq}`)
-      if (!nodes.has(seq)) throw new Error(`image/offload: target seq ${seq} is not a current surface node`)
-      const source = context.events[seq - context.baseSeq]
-      if (source?.type !== 'user/message' && source?.type !== 'tool/result') {
-        throw new Error(`image/offload: target seq ${seq} must be user/message or tool/result`)
-      }
-      let previous = -1
-      for (const index of target.imageIndexes) {
-        if (!isIndex(index) || index <= previous) {
-          throw new Error('image/offload: imageIndexes must be strictly increasing non-negative safe integers')
-        }
-        previous = index
-      }
-      const message = context.messages.get(seq) ?? (source.type === 'user/message' ? source.data : source.data.message)
-      messages.set(seq, offloadMessageImages(message, target.imageIndexes))
-    }
-    return messages
-  },
-}
-
 // ── 挂上去 ──────────────────────────────────────────────────────────────────
 
 /**
- * 注册投影 + request-error 监听器。
+ * 挂 request-error 监听器（投影交给内置插件，见文件头）。
  * @param ctx 插件上下文
  * @param trace 日志函数
  */
 export function installImageGuard(ctx, trace = () => {}) {
-  const registerProjection = (sctx) => {
-    const sessions = sctx.get ? sctx.get('sessions') : sctx.sessions
-    if (!sessions || typeof sessions.registerMessageProjection !== 'function') return
-    try {
-      sessions.registerMessageProjection(imageOffloadProjection)
-      trace('已注册 image/offload 投影（内置插件没挂，自己补一份）')
-    } catch (e) {
-      // 内置 dsh-compaction-image-offload 已经注册过，那就用它的
-      trace(`image/offload 投影已存在，用内置的: ${e && e.message}`)
-    }
-  }
-  if (typeof ctx.inject === 'function') ctx.inject(['sessions'], registerProjection)
-  else registerProjection(ctx)
-
   ctx.on('agent/request-error', ({ agent, failure }, next) => {
     const count = imagesToOffload(failure)
     if (count <= 0) return next()

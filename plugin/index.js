@@ -17,7 +17,7 @@ import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { installImageGuard } from './image-guard.js'
-import { ensureInstalled, installHint, assistInstall, paths, extensionId } from './setup.js'
+import { ensureInstalled, installHint, assistInstall, paths, extensionId, hostProbe } from './setup.js'
 import { snapshot, locate, focusShadow, elementBox, selectInPage, frameTexts } from './refs.js'
 import { consoleLog, networkLog, responseBody, clearLogs } from './devtools.js'
 import { historyNav, waitUntil } from './nav.js'
@@ -209,12 +209,16 @@ const HINT = () => installHint() + firstAid()
 
 // ── 与宿主通话 ──────────────────────────────────────────────────────────────
 
-/** 一次请求一个连接，协议是换行分隔的 JSON（和 cb CLI 完全一致）。 */
-function call(op, args = {}, timeoutMs = 60000) {
+/**
+ * 一次请求一个连接，协议是换行分隔的 JSON（和 cb CLI 完全一致）。
+ * quiet：后台自己问的（不是用户/模型要做的事）——出错不带「还差哪一步」，那里面会去打开扩展页、改剪贴板。
+ */
+function call(op, args = {}, timeoutMs = 60000, quiet = false) {
+  const hint = () => (quiet ? '' : HINT())
   return new Promise((resolve, reject) => {
     const SOCK = hostSock()
     if (!hostUp()) {
-      return reject(new Error(`浏览器桥没在跑（找不到 ${SOCK || TOKEN_FILE}）：Chrome 没开，或扩展还没加载。\n${HINT()}`))
+      return reject(new Error(`浏览器桥没在跑（找不到 ${SOCK || TOKEN_FILE}）：Chrome 没开，或扩展还没加载。\n${hint()}`))
     }
     try { checkDir(WIN ? DIR : path.dirname(SOCK)) } catch (e) { return reject(e) }
     const token = tokenLines()[0] || null
@@ -243,7 +247,7 @@ function call(op, args = {}, timeoutMs = 60000) {
       if (msg.ok) finish(resolve, msg.result)
       else finish(reject, new Error(msg.error || '未知错误'))
     })
-    sock.on('error', (e) => finish(reject, new Error(`连不上浏览器桥：${e.message}\n${HINT()}`)))
+    sock.on('error', (e) => finish(reject, new Error(`连不上浏览器桥：${e.message}\n${hint()}`)))
     sock.on('close', () => finish(reject, new Error('浏览器桥连接被关掉了')))
     timer = setTimeout(() => finish(reject, new Error(`等浏览器桥超时（${timeoutMs}ms）`)), timeoutMs)
   })
@@ -457,8 +461,11 @@ export function apply(ctx, config) {
 
   // 一次性安装：宿主 + native 注册自动落地，用户只剩把扩展装进 Chrome（加载已解压，或商店装）
   try {
-    const s = ensureInstalled()
-    trace(s.ok ? `setup: ${s.changed ? '已落盘' : '已是最新'} ext=${s.extId}` : `setup 跳过: ${s.reason}`)
+    // Windows 换旧宿主前问一下占着管道的宿主（DSH 和 cb 只连它）：是不是那个旧宿主、手上有没有活（见 hostProbe）。
+    // 悄悄问：问不到不能去打开扩展页、改剪贴板
+    const probe = hostProbe(() => call('status', {}, 5000, true))
+    const s = ensureInstalled({ log: trace, probe })
+    trace(s.ok ? `setup:${s.changed ? '已落盘' : '已是最新'} ext=${s.extId}` : `setup 跳过: ${s.reason}`)
   } catch (e) {
     trace(`setup 异常（忽略）: ${e && e.message}`)
   }

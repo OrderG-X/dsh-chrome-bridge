@@ -22,7 +22,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
-import { execFileSync, spawn } from 'node:child_process'
+import { execFile, execFileSync, spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 export const HOST_NAME = 'com.dsh.bridge'
@@ -167,23 +167,228 @@ export function parseRegExport(text) {
   return m ? m[1].replace(/\\(.)/g, '$1') : null
 }
 
+/** 批处理里原样写路径：% 要写成 %%，不然会被当成变量展开（引号挡不住） */
+const bat = (s) => String(s).replace(/%/g, '%%')
+
 /**
  * Windows 的宿主启动脚本。Chrome 用 cmd 跑它，stdout 就是 native messaging 管道，所以脚本自己一个字都不能往外打。
- * node 用 DSH 自己的（桌面版是 Electron，要 ELECTRON_RUN_AS_NODE），没了再找 PATH 里的；DSH 升级换了路径，
- * 插件下次加载会重写这个文件。路径可能带中文，先把代码页切到 UTF-8 再读后面的行。
+ * node 先用 primary（桌面版：复制到宿主目录、和这个脚本放一起的那份独立 node，只给文件名，见 hostNode），
+ * 没有再用 DSH 自己的程序（桌面版是 Electron，要 ELECTRON_RUN_AS_NODE；对真 node 这个变量没影响），都没了再找 PATH 里的。
+ * primary 用 %~dp0 拼：用户目录带中文时，脚本里直接写中文路径 cmd 会读错（CI 实测），%~dp0 是 cmd 自己算的，不会错。
+ * DSH 升级换了路径，插件下次加载会重写这个文件。路径可能带中文，先把代码页切到 UTF-8 再读后面的行。
  */
-export function winLauncher(execPath = process.execPath, electron = Boolean(process.versions.electron)) {
+export function winLauncher(execPath = process.execPath, electron = Boolean(process.versions.electron), primary = null) {
   return [
     '@echo off',
     'chcp 65001 >nul',
     'setlocal',
     ...(electron ? ['set ELECTRON_RUN_AS_NODE=1'] : []),
-    `set "N=${execPath}"`,
+    ...(primary ? [`set "N=%~dp0${primary}"`, `if not exist "%N%" set "N=${bat(execPath)}"`] : [`set "N=${bat(execPath)}"`]),
     'if defined DSH_BRIDGE_NODE set "N=%DSH_BRIDGE_NODE%"',
     'if not exist "%N%" for %%I in (node.exe) do set "N=%%~$PATH:I"',
-    '"%N%" "%~dp0host.js" %*',
+    // 宿主退出后马上 exit /b：cmd 不再回头读这个文件（文件可能已被改写，见 restartStaleHosts）
+    '"%N%" "%~dp0host.js" %* & exit /b',
     '',
   ].join('\r\n')
+}
+
+/**
+ * Windows 桌面版：给宿主复制一份独立的 node，放在宿主目录里（issue #3）。
+ * 宿主由 Chrome 拉起、一直开着；用 DSH 安装目录里的 DeepSeek Harness.exe 跑的话，它会一直占着安装目录，
+ * DSH 升级要把整个目录换名，就会失败（Windows 错误 32），安装器悄悄回滚。
+ * DSH 自带一份独立的 node（primary runtime：~/.dsh/dsh-runtimes 里一份，安装目录 resources/runtime 里是源头），
+ * 复制过来用，只占我们自己的目录。不直接用 ~/.dsh/dsh-runtimes 里那份：DSH 换新 runtime 时也要给那个目录换名。
+ * 文件名带 node 版本：换版本写新文件，旧的删得掉就删（正在跑的删不掉，下次再删）。
+ * 找不到、复制失败都返回 null，照旧用 DSH 的程序。
+ */
+export function hostNode(hostDir, { execPath = process.execPath, dshHome = process.env.DSH_HOME || path.join(os.homedir(), '.dsh'), now = Date.now() } = {}) {
+  const roots = [
+    path.join(dshHome, 'dsh-runtimes', 'dsh-primary-runtime'),
+    path.join(path.dirname(execPath), 'resources', 'runtime', 'primary-runtime'),
+  ]
+  for (const root of roots) {
+    const src = path.join(root, 'dependencies', 'node', 'bin', 'node.exe')
+    let st
+    try { st = fs.statSync(src) } catch { continue }
+    if (!st.isFile() || st.size === 0) continue
+    let ver = ''
+    try { const m = JSON.parse(fs.readFileSync(path.join(root, 'runtime.json'), 'utf8')); ver = String((m.components || m).node || '') } catch {}
+    const name = `node-${/^[\w.+-]+$/.test(ver) ? `v${ver}` : st.size}.exe`
+    const dest = path.join(hostDir, name)
+    let have = null
+    try { have = fs.statSync(dest) } catch {}
+    // 接着用已有的副本：刷一下修改时间，免得另一个 DSH 按「一小时前的旧副本」把它清掉
+    if (have && have.size === st.size) { try { fs.utimesSync(dest, new Date(now), new Date(now)) } catch {} }
+    if (!have || have.size !== st.size) {
+      const tmp = `${dest}.${process.pid}.tmp`
+      try {
+        fs.mkdirSync(hostDir, { recursive: true })
+        fs.copyFileSync(src, tmp)
+        fs.renameSync(tmp, dest)
+      } catch {
+        try { fs.rmSync(tmp, { force: true }) } catch {}
+        continue
+      }
+    }
+    // 旧版本的副本、没挪成的临时文件：一小时内没建过也没用过的才删（同时起来的另一个 DSH 可能刚复制好或刚用上、还没写启动脚本）
+    // Windows 复制文件会带上源文件的修改时间，所以创建时间和修改时间取晚的那个
+    try {
+      for (const f of fs.readdirSync(hostDir)) {
+        if (f === name || !/^node-[\w.+-]+\.exe(\.\d+\.tmp)?$/.test(f)) continue
+        const abs = path.join(hostDir, f)
+        try { const fst = fs.statSync(abs); if (now - Math.max(fst.birthtimeMs, fst.mtimeMs) > 3600_000) fs.rmSync(abs) } catch {}
+      }
+    } catch {}
+    return dest
+  }
+  return null
+}
+
+/**
+ * Windows：列出还在用别的程序跑着的宿主 [{ pid, cmd, created, exe }]。认得严：命令行里得有我们的 host.js（长路径或 8.3 短路径）
+ * 和 Chrome 传给原生宿主的 chrome-extension:// 参数（记事本开着 host.js 不算），程序不是 keep（长短路径都比），
+ * 也不是宿主目录里我们自己复制的 node（换了 node 版本时旧副本上的宿主不占 DSH 安装目录，不用去动它）。
+ * cmd：拉起它的那个正在跑 run.bat 的 cmd.exe 的 pid（没有就是 0），见 restartStaleHosts 为什么要连它一起结束。
+ * created：进程创建时刻（毫秒），复查时和 pid 一起认「还是不是那个进程」。
+ * hosts：浏览器拉起的我们的宿主一共几个（新旧都算）——不止一个就是几个浏览器 / 用户都连着，见 restartStaleHosts。
+ * 查询出任何错（WMI 坏了之类）都当失败抛出，不能当成「没有旧宿主」。
+ */
+export function listStaleHosts(hostDir, keep) {
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    '[Console]::OutputEncoding = [Text.Encoding]::UTF8',
+    '$fso = $null; try { $fso = New-Object -ComObject Scripting.FileSystemObject } catch {}',
+    'function Short($p) { if (-not $fso) { return $null }; try { $fso.GetFile($p).ShortPath } catch { $null } }',
+    '$h = $env:DSH_BRIDGE_HOSTJS; $hs = Short $h',
+    '$b = $env:DSH_BRIDGE_RUNBAT; $bs = Short $b',
+    '$k = $env:DSH_BRIDGE_KEEP; $ks = Short $k',
+    '$d = $env:DSH_BRIDGE_HOSTDIR + [IO.Path]::DirectorySeparatorChar; $ds = $null; if ($fso) { try { $ds = $fso.GetFolder($env:DSH_BRIDGE_HOSTDIR).ShortPath + [IO.Path]::DirectorySeparatorChar } catch {} }',
+    '$ic = [StringComparison]::OrdinalIgnoreCase',
+    'function Has($s, $x) { $x -and $s.IndexOf($x, $ic) -ge 0 }',
+    '$all = @(Get-CimInstance Win32_Process)',
+    '$byId = @{}; foreach ($p in $all) { $byId[[int]$p.ProcessId] = $p }',
+    '$mine = @($all | Where-Object { $_.CommandLine -and (Has $_.CommandLine \'chrome-extension://\') -and ((Has $_.CommandLine $h) -or (Has $_.CommandLine $hs)) })',
+    "'OK'",
+    '"HOSTS`t$($mine.Count)"',
+    'foreach ($p in $mine) {',
+    '  $c = $p.CommandLine; $e = $p.ExecutablePath',
+    '  if (-not $e) { continue }',
+    '  if ([string]::Equals($e, $k, $ic) -or ($ks -and [string]::Equals($e, $ks, $ic))) { continue }',
+    '  if ($e.StartsWith($d, $ic) -or ($ds -and $e.StartsWith($ds, $ic))) { continue }',
+    '  $par = $byId[[int]$p.ParentProcessId]; $cmd = 0',
+    "  if ($par -and $par.Name -ieq 'cmd.exe' -and $par.CommandLine -and ((Has $par.CommandLine $b) -or (Has $par.CommandLine $bs))) { $cmd = $par.ProcessId }",
+    '  $t = 0; if ($p.CreationDate) { $t = ([DateTimeOffset]$p.CreationDate).ToUnixTimeMilliseconds() }',
+    '  "$($p.ProcessId)`t$cmd`t$t`t$e"',
+    '}',
+  ].join('\n')
+  const env = { ...process.env, DSH_BRIDGE_HOSTJS: path.join(hostDir, 'host.js'), DSH_BRIDGE_RUNBAT: path.join(hostDir, 'run.bat'), DSH_BRIDGE_HOSTDIR: hostDir, DSH_BRIDGE_KEEP: keep }
+  return new Promise((resolve, reject) => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+      { env, windowsHide: true, timeout: 60000, encoding: 'utf8' }, (err, stdout) => {
+        if (err) return reject(err)
+        const lines = String(stdout).split(/\r?\n/).map((l) => l.trim())
+        // 查询本身跑完了才会先打 OK：没有这行就是半路出错了
+        const total = (/^HOSTS\t(\d+)$/m.exec(lines.join('\n')) || [])[1]
+        if (!lines.includes('OK') || total === undefined) return reject(new Error('列进程没有跑完'))
+        resolve(lines.map((l) => l.split('\t'))
+          .filter(([pid, cmd, t]) => /^\d+$/.test(pid) && /^\d+$/.test(cmd || '') && /^\d+$/.test(t || ''))
+          .map(([pid, cmd, t, exe]) => ({ pid: Number(pid), cmd: Number(cmd), created: Number(t), hosts: Number(total), exe })))
+      })
+  })
+}
+
+/** 结束旧宿主：有拉起它的 cmd 就连 cmd 带它一起结束（/T），没有就只结束它 */
+function killHost({ pid, cmd }) {
+  const args = cmd ? ['/pid', String(cmd), '/T', '/F'] : ['/pid', String(pid), '/F']
+  return new Promise((r) => execFile('taskkill', args, { windowsHide: true, timeout: 15000 }, (e) => r(!e)))
+}
+
+/**
+ * 问占着管道的宿主（DSH 和 cb 只连它）现在能不能换掉旧宿主 h：
+ *   'idle'    就是它，手上没有在途的操作，而且最近 5 秒没收到扩展的消息——扩展的回话一到它就开始往客户端写，
+ *             老宿主的 status 不报「还在写」，所以等最后一条回话过去 5 秒（本机管道上早写完了）；
+ *   'busy'    就是它，但有在途的操作、或刚收到扩展的消息；
+ *   'foreign' 不是它，或者问不到。
+ * getStatus：问宿主 status 的函数（插件里悄悄问，e2e 里用 cb）。
+ */
+export function hostProbe(getStatus, { extQuietMs = 5000 } = {}) {
+  return async (h) => {
+    let st = null
+    try { st = await getStatus() } catch {}
+    if (!st || st.pid !== h.pid) return 'foreign'
+    if (st.pending > 0 || Date.now() - (Number(st.lastExtMsg) || 0) < extQuietMs) return 'busy'
+    return 'idle'
+  }
+}
+
+/**
+ * Windows：启动脚本换了 node 之后，把还在用别的程序跑着的宿主换下来（比如老版本用 DSH 安装目录里的程序拉起的）。
+ * 不换的话它要等 Chrome 完全退出才会走，这期间照样占着 DSH 安装目录。结束掉之后扩展马上重连，Chrome 按新脚本拉起新宿主。
+ *
+ * 别的 DSH / cb 可能正通过它操作浏览器，老宿主在 Windows 上又不会自己排空退出，只能从外面结束，所以只换「占着管道、闲着」的：
+ * probe（见 hostProbe）连续答 'idle' 够 idleMs，再列一遍进程确认它还在（pid 和创建时刻都对得上），隔一秒再问一次还闲，马上结束。
+ * 答案一变计时重来（末次复查也算）。几个旧宿主同时等，互不耽误。
+ * 浏览器拉起的宿主不止一个（Chrome 和 Edge / 两个 Chrome 用户都装了扩展）就整个不换：结束哪个都可能让另一个接过管道
+ * （被结束的重连后变成最新的那个，或者后台那个在空档里按自愈逻辑把 token 改成自己的），DSH 接下来的操作就跑到另一个浏览器去了。
+ * 这种只能等用户重启浏览器；记号留着，下次加载只剩一个时再换。问不到 / 不是它（'foreign'）连着几次也放弃这次。
+ * 有没换下的就不调 done：记号留着，下次加载再试。
+ * 连拉起它的 cmd 一起结束：cmd 跑批处理是一行一行现读的，宿主一退它会按原来的位置接着读 run.bat——
+ * 而 run.bat 刚被我们改写过，接着读到的正是新脚本里拉宿主的那行，变量还是旧的，于是又用 DSH 的程序拉起一个宿主，
+ * 还接在 Chrome 原来那条管道上（CI 实测）。cmd 一走管道就断了，扩展重连，Chrome 按新脚本拉起新宿主。
+ * 剩下的风险：「最后一次问还闲」和「结束」之间几十毫秒里正好进来的操作、或者一个卡住 5 秒以上不读回话的客户端，会断掉
+ * （客户端看到连接被关）。只在第一次换宿主时有这么一下，老宿主没有别的办法让它排空。
+ */
+export async function restartStaleHosts(hostDir, keep, {
+  log = () => {}, probe = async () => 'foreign', list = listStaleHosts, kill = killHost,
+  done = () => {}, waitMs = 15 * 60_000, idleMs = 5000, pollMs = 2000, foreignTries = 3,
+} = {}) {
+  // 计时器不拖住进程：DSH 命令行这类很快就退出的场合，等不完就算了（记号还在，下次再来）
+  const sleep = (ms) => new Promise((r) => { const t = setTimeout(r, ms); if (t.unref) t.unref() })
+  let stale
+  try { stale = await list(hostDir, keep) } catch (e) { return log(`查旧宿主失败：${e.message}`) }
+  const multi = (h) => `有 ${h.hosts} 个浏览器（或用户）连着宿主，这次不换旧宿主：结束一个的空档里另一个可能接过管道，`
+    + 'DSH 的操作就跑到别的浏览器去了。把浏览器都重启一次就好'
+  if (stale.some((h) => h.hosts > 1)) return log(multi(stale.find((h) => h.hosts > 1)))
+
+  const one = async (host) => {
+    const { pid, exe } = host
+    const until = Date.now() + waitMs
+    let idleSince = null
+    let foreign = 0
+    const ask = async () => {
+      const st = await probe(host)
+      idleSince = st === 'idle' ? (idleSince ?? Date.now()) : null
+      foreign = st === 'foreign' ? foreign + 1 : 0
+      return st
+    }
+    const ready = () => idleSince !== null && Date.now() - idleSince >= idleMs
+    while (Date.now() < until) {
+      await ask()
+      if (foreign >= foreignTries) { log(`问不到旧宿主 ${pid}，这次不动它（${exe}），下次加载再看`); return false }
+      if (ready()) {
+        // 慢的（PowerShell 列进程）放在前面，最后一次问和结束之间不夹别的
+        let fresh
+        try { fresh = (await list(hostDir, keep)).find((h) => h.pid === pid && h.created === host.created) } catch (e) {
+          log(`复查旧宿主 ${pid} 失败，这次不结束：${e.message}`)
+          return false
+        }
+        if (!fresh) return true   // 自己走了
+        if (fresh.hosts > 1) { log(multi(fresh)); return false }
+        await sleep(1000)
+        if (await ask() === 'idle' && ready()) {
+          const ok = await kill(fresh)
+          log(ok ? `换下了还在用旧程序跑的宿主 ${pid}（${exe}）` : `结束旧宿主 ${pid} 失败（${exe}）`)
+          return ok
+        }
+      }
+      await sleep(pollMs)
+    }
+    log(`旧宿主 ${pid} 一直没空，这次不换（${exe}），下次加载再试`)
+    return false
+  }
+
+  const results = await Promise.all(stale.map((h) => one(h).catch((e) => { log(`换旧宿主 ${h.pid} 出错：${e.message}`); return false })))
+  if (results.every(Boolean)) done()
 }
 
 /** 单引号包起来给 sh 用（路径里的单引号拆开转义） */
@@ -285,9 +490,12 @@ export function ensureInstalled(options = {}) {
 
     let nmPrev = null
     try { nmPrev = fs.readFileSync(p.nmFile, 'utf8') } catch {}
-    const launcherBody = win ? winLauncher() : unixLauncher()
+    // 桌面版（Electron）在 Windows 上：宿主改用复制到宿主目录的独立 node，别占着 DSH 安装目录（issue #3）
+    const primary = win && process.versions.electron ? hostNode(p.hostDir) : null
+    const launcherBody = win ? winLauncher(process.execPath, Boolean(process.versions.electron), primary && path.basename(primary)) : unixLauncher()
     let launcherPrev = null
     try { launcherPrev = fs.readFileSync(p.launcher, 'utf8') } catch {}
+    const restartMark = path.join(p.hostDir, 'restart-hosts.pending')
     const regOk = !win || REG_KEYS.every((k) => regValue(k) === p.nmFile)
     const upToDate = prev === stamp && nmPrev === nmBody && launcherPrev === launcherBody && regOk
       && allPresent(vExt, p.extDir) && allPresent(vHost, p.hostDir)
@@ -296,6 +504,8 @@ export function ensureInstalled(options = {}) {
       fs.cpSync(vExt, p.extDir, { recursive: true, force: true })
       fs.mkdirSync(p.hostDir, { recursive: true })
       fs.cpSync(vHost, p.hostDir, { recursive: true, force: true })
+      // 换了 node：先记一笔「还有旧宿主要换」再写启动脚本（后面哪步失败了，下次加载也还记得要换），换完才删
+      if (primary && launcherPrev !== launcherBody) fs.writeFileSync(restartMark, `${primary}\n`)
       fs.writeFileSync(p.launcher, launcherBody)
       if (!win) fs.chmodSync(p.launcher, 0o755)
       fs.rmSync(path.join(p.hostDir, 'launch-error.txt'), { force: true })   // 上回拉不起来的原因：脚本重写了就作废
@@ -308,6 +518,12 @@ export function ensureInstalled(options = {}) {
       }
       fs.writeFileSync(p.stampFile, `${stamp}\n`)
       out.changed = true
+    }
+    if (primary && fs.existsSync(restartMark)) {
+      restartStaleHosts(p.hostDir, primary, {
+        log: options.log || undefined, probe: options.probe,
+        done: () => { try { fs.rmSync(restartMark, { force: true }) } catch {} },
+      }).catch((e) => options.log && options.log(`换旧宿主出错：${e.message}`))
     }
 
     // ── 可选件：cb CLI、页内光标脚本 —— 失败只是少个便利，不该让安装失败 ──

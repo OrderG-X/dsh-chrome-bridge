@@ -17,7 +17,8 @@ if [ "$(node -p process.platform)" = win32 ]; then
   E="${RUNNER_TEMP:-$(mktemp -d)}/electron"
   # 第一次 require('electron') 会先下载程序、往输出里打一行进度：只取最后一行的路径
   if npm i --prefix "$E" electron --no-audit --no-fund --loglevel=error >/dev/null && EXE="$(node -p 'require(process.argv[1])' "$E/node_modules/electron" | tail -1)" && node -e 'process.exit(require("fs").existsSync(process.argv[1]) ? 0 : 1)' "$EXE"; then
-    t env ELECTRON_RUN_AS_NODE=1 "$EXE" scratch/e2e-chrome.mjs --cjk-home
+    # DSH_E2E_NODE：模拟 DSH 自带的独立 node，看宿主换成复制的那份、不再占着 DSH 安装目录（issue #3）
+    t env ELECTRON_RUN_AS_NODE=1 DSH_E2E_NODE="$(node -p process.execPath)" "$EXE" scratch/e2e-chrome.mjs --cjk-home
   else
     echo "❌ 装不上 Electron"; fail=1
   fi
