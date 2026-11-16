@@ -43,6 +43,7 @@
     "cordis.patch.yml",
     "client.js",
     "locale",
+    "i18n",
     "icon.svg",
     "vendor",
     "package.json"

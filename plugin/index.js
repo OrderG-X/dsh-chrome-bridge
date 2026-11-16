@@ -24,6 +24,7 @@ import { historyNav, waitUntil } from './nav.js'
 import { PANEL_ROUTE, panelHandler } from './panel.js'
 import { drag } from './drag.js'
 import { download, downloadsDir, humanSize } from './download.js'
+import { createT, DEFAULT_LOCALE, normalizeLocale } from './i18n/index.js'
 
 /**
  * 这里刻意不 import 任何外部包——不碰 `@deepseek-ai/dsh-tools`。
@@ -59,7 +60,7 @@ const { O_WRONLY, O_CREAT, O_APPEND, O_NOFOLLOW } = fs.constants
 function checkDir(dir) {
   const st = fs.lstatSync(dir)
   if (!st.isDirectory() || (!WIN && ((UID !== null && st.uid !== UID) || (st.mode & 0o077)))) {
-    throw new Error(`${dir} 不是只属于当前用户的目录，拒绝使用`)
+    throw new Error(t('err.dirNotOwned', { dir }))
   }
 }
 
@@ -183,6 +184,13 @@ export const name = 'browser-bridge'
 export const inject = ['tools']
 
 /**
+ * 工具描述 / 参数说明 / 报错文案的当前语言。apply 里按 config.locale 换掉；
+ * 模块级的报错（call、resolveTab、uploadable 这些）也用同一个 t。
+ * 默认 zh：没配 locale 的安装行为和以前逐字一致。
+ */
+let t = createT(DEFAULT_LOCALE)
+
+/**
  * 第一次发现宿主连不上时，做一次「引导」：把扩展目录塞进剪贴板、后台打开
  * chrome://extensions（见 setup.js 的 assistInstall）。每个进程只做一次。
  * 那一下点选替不了 —— Chrome 137+ 没有 --load-extension —— 但至少让用户不用自己去翻目录、找页面。
@@ -196,9 +204,9 @@ function firstAid() {
     if (hostUp()) return ''
     const r = assistInstall()
     const notes = []
-    if (r.opened) notes.push(`我已经帮你把 chrome://extensions 打开（后台标签页）${r.store ? '，看一眼 DSH Bridge 是不是启用着' : ''}`)
-    if (r.clipboard) notes.push(`扩展文件夹的路径已经复制到剪贴板（${WIN ? '粘进文件框顶上的地址栏、回车' : '文件框里 ⌘⇧G 再 ⌘V 回车'}就到）`)
-    return notes.length ? `\n（${notes.join('；')}）` : ''
+    if (r.opened) notes.push(t('hint.extOpened', { store: r.store ? t('hint.extOpenedStore') : '' }))
+    if (r.clipboard) notes.push(t('hint.copied', { how: WIN ? t('hint.copiedWin') : t('hint.copiedMac') }))
+    return notes.length ? t('hint.notes', { notes: notes.join(t('hint.notesSep')) }) : ''
   } catch {
     return ''
   }
@@ -218,7 +226,7 @@ function call(op, args = {}, timeoutMs = 60000, quiet = false) {
   return new Promise((resolve, reject) => {
     const SOCK = hostSock()
     if (!hostUp()) {
-      return reject(new Error(`浏览器桥没在跑（找不到 ${SOCK || TOKEN_FILE}）：Chrome 没开，或扩展还没加载。\n${hint()}`))
+      return reject(new Error(t('err.bridgeDown', { sock: SOCK || TOKEN_FILE, hint: hint() })))
     }
     try { checkDir(WIN ? DIR : path.dirname(SOCK)) } catch (e) { return reject(e) }
     const token = tokenLines()[0] || null
@@ -243,13 +251,13 @@ function call(op, args = {}, timeoutMs = 60000, quiet = false) {
       const i = acc.indexOf('\n')
       if (i < 0) return
       let msg
-      try { msg = JSON.parse(acc.slice(0, i)) } catch { return finish(reject, new Error('宿主回了坏 JSON')) }
+      try { msg = JSON.parse(acc.slice(0, i)) } catch { return finish(reject, new Error(t('err.badJson'))) }
       if (msg.ok) finish(resolve, msg.result)
-      else finish(reject, new Error(msg.error || '未知错误'))
+      else finish(reject, new Error(msg.error || t('err.unknownHostError')))
     })
-    sock.on('error', (e) => finish(reject, new Error(`连不上浏览器桥：${e.message}\n${hint()}`)))
-    sock.on('close', () => finish(reject, new Error('浏览器桥连接被关掉了')))
-    timer = setTimeout(() => finish(reject, new Error(`等浏览器桥超时（${timeoutMs}ms）`)), timeoutMs)
+    sock.on('error', (e) => finish(reject, new Error(t('err.connect', { message: e.message, hint: hint() }))))
+    sock.on('close', () => finish(reject, new Error(t('err.closed'))))
+    timer = setTimeout(() => finish(reject, new Error(t('err.timeout', { ms: `${timeoutMs}ms` }))), timeoutMs)
   })
 }
 
@@ -281,12 +289,12 @@ async function resolveTab(tab) {
   if (tab !== undefined && tab !== null && tab !== '') {
     if (String(tab) === 'active') {
       const active = userTab(await call('tabs'))
-      if (!active) throw new Error('没有活动标签页')
+      if (!active) throw new Error(t('err.noActiveTab'))
       rememberTab(active.id)
       return active.id
     }
     const id = Number(tab)
-    if (!Number.isInteger(id)) throw new Error(`tab 要是标签页 id（数字）或 "active"，收到的是「${tab}」`)
+    if (!Number.isInteger(id)) throw new Error(t('err.badTab', { tab }))
     rememberTab(id)
     return id
   }
@@ -295,9 +303,7 @@ async function resolveTab(tab) {
     if ((await call('tabs')).some((t) => t.id === id)) return id
     currentTab.delete(sessionKey())
   }
-  throw new Error(
-    '没指定标签页（tab）。先用 browser_tabs 打开（open）或找到（list / find）要操作的页面，再把 id 传给 tab；' +
-    '要操作用户正在看的那一页就明确传 tab="active"。不传 tab 时只会接着用你自己打开或点名操作过的标签页，不会去动用户正在看的页面')
+  throw new Error(t('err.noTab'))
 }
 
 /**
@@ -419,15 +425,15 @@ function uploadable(files, cwd) {
   const hidden = (p) => p.split(path.sep).some((seg) => seg.startsWith('.'))
   return files.map((f) => {
     const raw = String(f)
-    if (!path.isAbsolute(raw) && !cwd) throw new Error(`upload 要给绝对路径：${raw}`)
+    if (!path.isAbsolute(raw) && !cwd) throw new Error(t('err.uploadAbs', { path: raw }))
     const abs = path.resolve(cwd || '/', raw)
     let real
-    try { real = fs.realpathSync(abs) } catch { throw new Error(`文件不存在：${raw}`) }
-    if (hidden(abs) || hidden(real)) throw new Error(`不能上传隐藏目录 / 隐藏文件：${raw}`)
+    try { real = fs.realpathSync(abs) } catch { throw new Error(t('err.uploadMissing', { path: raw })) }
+    if (hidden(abs) || hidden(real)) throw new Error(t('err.uploadHidden', { path: raw }))
     if (!roots.some((r) => real.startsWith(r + path.sep))) {
-      throw new Error(`只能上传会话工作目录${cwd ? `（${cwd}）` : ''}或系统临时目录下的文件：${raw}`)
+      throw new Error(cwd ? t('err.uploadOutsideCwd', { cwd, path: raw }) : t('err.uploadOutside', { path: raw }))
     }
-    if (!fs.statSync(real).isFile()) throw new Error(`不是普通文件：${raw}`)
+    if (!fs.statSync(real).isFile()) throw new Error(t('err.uploadNotFile', { path: raw }))
     return real
   })
 }
@@ -447,8 +453,6 @@ const textOutput = {
   render: (_args, value) => [{ type: 'text', text: value.text }],
 }
 
-const TAB_DESC = '标签页 id（数字），或 "active" 表示用户当前正在看的标签页。省略时接着用本会话上次打开或操作过的标签页；还没有就报错，不会默认去动用户正在看的页面'
-const REF_DESC = '元素编号：browser_read(what=snapshot) 列出的 [N]。最稳，有编号就别再猜选择器'
 const present = (title) => (args) => ({ card: 'generic', title, kind: 'other', rawInput: args })
 
 // ── 截图：把图直接给模型看 ──────────────────────────────────────────────────
@@ -457,7 +461,10 @@ const present = (title) => (args) => ({ card: 'generic', title, kind: 'other', r
 const shotRefs = new Map()
 
 export function apply(ctx, config) {
-  trace('apply 被调用')
+  // 工具描述是写进模型上下文的那一层，注册那一刻就得是最终语言：
+  // config.locale 给 en / ru，缺省或认不出就是 zh（见 i18n/index.js）。
+  t = createT(config && config.locale)
+  trace(`apply 被调用（locale: ${normalizeLocale(config && config.locale)}）`)
 
   // 一次性安装：宿主 + native 注册自动落地，用户只剩把扩展装进 Chrome（加载已解压，或商店装）
   try {
@@ -502,22 +509,23 @@ export function apply(ctx, config) {
     trace(`会话投影没拿到（upload 按会话头里的目录算）: ${e && e.message}`)
   }
 
+  // 好几处参数说明共用这两段，按当前语言取一次
+  const TAB = t('param.tab')
+  const REF = t('param.ref')
+
   const tools = [
     // ── 标签页 ──────────────────────────────────────────────────────────────
     defineTool({
       name: 'browser_tabs',
-      description:
-        '列出 / 查找 / 打开 / 关闭 / 切换 Chrome 标签页。其它 browser_* 工具都要 tab 参数，先用它拿 id。' +
-        '用的是用户真实的 Chrome（登录状态都在），不会新开一个干净的浏览器。' +
-        'open 新开的页默认放进一个单独的「DSH 干活窗口」，在后台、不抢用户焦点，用户正在看的页面不受影响。',
+      description: t('tool.tabs.desc'),
       parameters: {
         action: {
           type: 'string', required: true, enum: ['list', 'find', 'open', 'close', 'activate'],
-          description: 'list 全部；find 按关键词过滤标题/URL；open 新开（默认进单独的干活窗口）；close 关掉；activate 切到前台（会把那个窗口带到用户眼前，没被要求就别用）',
+          description: t('tool.tabs.action'),
         },
-        query: { type: 'string', description: 'action=find 时的关键词（匹配标题或 URL）' },
-        url: { type: 'string', description: 'action=open 时要打开的网址' },
-        tab: { type: 'string', description: 'action=close/activate 时的标签页 id' },
+        query: { type: 'string', description: t('tool.tabs.query') },
+        url: { type: 'string', description: t('tool.tabs.url') },
+        tab: { type: 'string', description: t('tool.tabs.tab') },
       },
       output: textOutput,
       presentCall: present('Browser tabs'),
@@ -540,7 +548,7 @@ export function apply(ctx, config) {
             }
           }
           case 'open': {
-            if (!args.url) throw new Error('action=open 需要 url')
+            if (!args.url) throw new Error(t('err.openNeedsUrl'))
             const r = await call('open', { url: args.url })
             rememberTab(r.tabId)
             const where = r.window === 'agent' ? '（在单独的 DSH 干活窗口里，后台打开，没打扰用户正在看的页）' : '（后台标签页）'
@@ -558,7 +566,7 @@ export function apply(ctx, config) {
             return { text: `已切到标签页 ${tabId}` }
           }
           default:
-            throw new Error(`不认识的 action: ${args.action}`)
+            throw new Error(t('err.unknownAction', { action: args.action }))
         }
       },
     }),
@@ -566,17 +574,13 @@ export function apply(ctx, config) {
     // ── 读页面 ──────────────────────────────────────────────────────────────
     defineTool({
       name: 'browser_read',
-      description:
-        '读页面内容。what=snapshot 列出页面上能点/能填的元素，每个带编号 [N]——要操作页面时先调它，' +
-        '之后 browser_click / browser_input 直接传 ref=N，比猜选择器稳（同源 iframe 里的元素也会列出、也能按编号操作）；' +
-        'text 取可见文字（抓内容首选）；html 取外层 HTML；' +
-        'attr 取某个属性；info 取标题/URL/视口，并会告诉你有没有 alert 弹窗挡着（挡着的话先调 browser_dialog）。',
+      description: t('tool.read.desc'),
       parameters: {
-        what: { type: 'string', required: true, enum: ['snapshot', 'text', 'html', 'attr', 'info'], description: '读什么' },
-        tab: { type: 'string', description: TAB_DESC },
-        selector: { type: 'string', description: 'CSS 选择器；snapshot/text/html 省略时取整页' },
-        name: { type: 'string', description: 'what=attr 时要读的属性名，例如 href' },
-        limit: { type: 'integer', description: '最多返回多少字符，默认 6000（snapshot 默认 8000）' },
+        what: { type: 'string', required: true, enum: ['snapshot', 'text', 'html', 'attr', 'info'], description: t('tool.read.what') },
+        tab: { type: 'string', description: TAB },
+        selector: { type: 'string', description: t('tool.read.selector') },
+        name: { type: 'string', description: t('tool.read.name') },
+        limit: { type: 'integer', description: t('tool.read.limit') },
       },
       output: textOutput,
       presentCall: present('Read page'),
@@ -605,7 +609,7 @@ export function apply(ctx, config) {
             return { text: clip(r.html, limit) }
           }
           case 'attr': {
-            if (!args.selector || !args.name) throw new Error('what=attr 需要 selector 和 name')
+            if (!args.selector || !args.name) throw new Error(t('err.attrNeeds'))
             const r = await call('attr', { tabId, selector: args.selector, name: args.name })
             return { text: r.value === null ? '(没有这个属性)' : String(r.value) }
           }
@@ -618,7 +622,7 @@ export function apply(ctx, config) {
             return { text: `${r.title}\n${r.url}${v}${d}` }
           }
           default:
-            throw new Error(`不认识的 what: ${args.what}`)
+            throw new Error(t('err.unknownWhat', { what: args.what }))
         }
       },
     }),
@@ -626,18 +630,15 @@ export function apply(ctx, config) {
     // ── 点击 ────────────────────────────────────────────────────────────────
     defineTool({
       name: 'browser_click',
-      description:
-        '在页面里点击。最稳的是 ref（browser_read what=snapshot 给的编号）；其次 selector 或 text（按文字找元素），' +
-        '都不行再退回坐标 x/y。' +
-        '发的是真实鼠标事件（能触发新窗口、弹窗、焦点），不是 JS 假点击。点击时用户屏幕上会出现一个小光标。',
+      description: t('tool.click.desc'),
       parameters: {
-        tab: { type: 'string', description: TAB_DESC },
-        ref: { type: 'integer', description: REF_DESC },
-        selector: { type: 'string', description: 'CSS 选择器' },
-        text: { type: 'string', description: '按可见文字找元素并点击（比 selector 更耐改版）' },
-        x: { type: 'integer', description: '视口坐标 X（配合 y）' },
-        y: { type: 'integer', description: '视口坐标 Y（配合 x）' },
-        count: { type: 'integer', description: '点击次数，默认 1（2 = 双击）' },
+        tab: { type: 'string', description: TAB },
+        ref: { type: 'integer', description: REF },
+        selector: { type: 'string', description: t('tool.click.selector') },
+        text: { type: 'string', description: t('tool.click.text') },
+        x: { type: 'integer', description: t('tool.click.x') },
+        y: { type: 'integer', description: t('tool.click.y') },
+        count: { type: 'integer', description: t('tool.click.count') },
       },
       output: textOutput,
       presentCall: present('Browser click'),
@@ -667,32 +668,30 @@ export function apply(ctx, config) {
           const r = await call('click', { tabId, x: Number(args.x), y: Number(args.y), clickCount: count, ...withCursor() })
           return { text: `已点击坐标 (${r.x}, ${r.y})` }
         }
-        throw new Error('要给出 ref、selector、text 或 x+y 之一')
+        throw new Error(t('err.clickNeeds'))
       },
     }),
 
     // ── 输入 ────────────────────────────────────────────────────────────────
     defineTool({
       name: 'browser_input',
-      description:
-        '往页面里输入：type 打字（可先用 selector 聚焦）、key 按键（含组合键如 meta+a）、' +
-        'select 选下拉项、upload 塞文件、focus 聚焦、hover 悬停、scroll 滚动。',
+      description: t('tool.input.desc'),
       parameters: {
         action: {
           type: 'string', required: true, enum: ['type', 'key', 'select', 'upload', 'focus', 'hover', 'scroll'],
-          description: '要做的输入动作',
+          description: t('tool.input.action'),
         },
-        tab: { type: 'string', description: TAB_DESC },
-        text: { type: 'string', description: 'action=type 时要输入的文字' },
-        ref: { type: 'integer', description: `${REF_DESC}；可代替 selector` },
-        selector: { type: 'string', description: 'CSS 选择器（type 时先点它聚焦；select/upload/focus/hover 要它或 ref）' },
-        key: { type: 'string', description: 'action=key 的按键，例如 Enter / Escape / "meta+a" / "ctrl+shift+k"' },
-        value: { type: 'string', description: 'action=select 时要选的 value 或选项文字' },
-        files: { type: 'array', items: { type: 'string' }, description: 'action=upload 的本地文件绝对路径（只限会话工作目录或系统临时目录下、非隐藏的文件）' },
-        dy: { type: 'integer', description: 'action=scroll 的纵向滚动量，默认 600（向下为正）' },
-        dx: { type: 'integer', description: 'action=scroll 的横向滚动量，默认 0' },
-        x: { type: 'integer', description: 'action=hover 且不用 selector 时的视口 X 坐标' },
-        y: { type: 'integer', description: 'action=hover 且不用 selector 时的视口 Y 坐标' },
+        tab: { type: 'string', description: TAB },
+        text: { type: 'string', description: t('tool.input.text') },
+        ref: { type: 'integer', description: t('tool.input.ref', { ref: REF }) },
+        selector: { type: 'string', description: t('tool.input.selector') },
+        key: { type: 'string', description: t('tool.input.key') },
+        value: { type: 'string', description: t('tool.input.value') },
+        files: { type: 'array', items: { type: 'string' }, description: t('tool.input.files') },
+        dy: { type: 'integer', description: t('tool.input.dy') },
+        dx: { type: 'integer', description: t('tool.input.dx') },
+        x: { type: 'integer', description: t('tool.input.x') },
+        y: { type: 'integer', description: t('tool.input.y') },
       },
       output: textOutput,
       presentCall: present('Browser input'),
@@ -706,11 +705,11 @@ export function apply(ctx, config) {
         const selector = el ? el.selector : args.selector
         const target = hasRef ? `[${args.ref}]` : args.selector
         const noShadow = (what) => {
-          if (el && el.shadow) throw new Error(`编号 ${args.ref} 在 shadow DOM 或 iframe 里，${what} 暂时不支持按编号——改用 browser_eval`)
+          if (el && el.shadow) throw new Error(t('err.shadowUnsupported', { ref: args.ref, action: what }))
         }
         switch (args.action) {
           case 'type': {
-            if (args.text === undefined) throw new Error('action=type 需要 text')
+            if (args.text === undefined) throw new Error(t('err.typeNeedsText'))
             if (el && el.shadow) {
               await call('click', { tabId, x: el.x, y: el.y, ...withCursor() })
               const r = await call('type', { tabId, text: args.text })
@@ -720,13 +719,13 @@ export function apply(ctx, config) {
             return { text: `已输入 ${r.typed} 个字符${selector ? `（先聚焦了 ${target}）` : ''}` }
           }
           case 'key': {
-            if (!args.key) throw new Error('action=key 需要 key')
+            if (!args.key) throw new Error(t('err.keyNeedsKey'))
             await call('key', { tabId, key: args.key })
             return { text: `已按键 ${args.key}` }
           }
           case 'select': {
-            if (!selector && !el) throw new Error('action=select 需要 ref 或 selector')
-            if (args.value === undefined) throw new Error('action=select 需要 value')
+            if (!selector && !el) throw new Error(t('err.selectNeedsTarget'))
+            if (args.value === undefined) throw new Error(t('err.selectNeedsValue'))
             if (el && el.shadow) {
               const r = await selectInPage(call, tabId, args.ref, args.value)
               return { text: `已选择「${r.label}」(${r.value})` }
@@ -735,15 +734,15 @@ export function apply(ctx, config) {
             return { text: `已选择「${r.label}」(${r.value})` }
           }
           case 'upload': {
-            if (!selector && !el) throw new Error('action=upload 需要 ref 或 selector')
-            if (!args.files?.length) throw new Error('action=upload 需要 files')
+            if (!selector && !el) throw new Error(t('err.uploadNeedsTarget'))
+            if (!args.files?.length) throw new Error(t('err.uploadNeedsFiles'))
             noShadow('upload')
             const files = uploadable(args.files, sessionCwd(exec))
             const r = await call('upload', { tabId, selector, files })
             return { text: `已把 ${r.files.length} 个文件塞进 ${target}` }
           }
           case 'focus': {
-            if (!selector && !el) throw new Error('action=focus 需要 ref 或 selector')
+            if (!selector && !el) throw new Error(t('err.focusNeedsTarget'))
             if (el && el.shadow) await focusShadow(call, tabId, args.ref)
             else await call('focus', { tabId, selector })
             return { text: `已聚焦 ${target}` }
@@ -751,7 +750,7 @@ export function apply(ctx, config) {
           case 'hover': {
             const byPoint = el && el.shadow
             if (!selector && !byPoint && (args.x === undefined || args.y === undefined)) {
-              throw new Error('action=hover 需要 ref 或 selector，或者给 x/y 坐标')
+              throw new Error(t('err.hoverNeedsTarget'))
             }
             const r = await call('hover', {
               tabId,
@@ -767,7 +766,7 @@ export function apply(ctx, config) {
             return { text: `已滚动 ${r.deltaY}px，当前 scrollY=${r.scrollY} / 页高 ${r.pageHeight}` }
           }
           default:
-            throw new Error(`不认识的 action: ${args.action}`)
+            throw new Error(t('err.unknownAction', { action: args.action }))
         }
       },
     }),
@@ -775,14 +774,14 @@ export function apply(ctx, config) {
     // ── 导航 ────────────────────────────────────────────────────────────────
     defineTool({
       name: 'browser_nav',
-      description: '跳到某个网址（action=go，默认），或者 back 后退、forward 前进、reload 刷新。都会等页面加载完。',
+      description: t('tool.nav.desc'),
       parameters: {
         action: {
           type: 'string', enum: ['go', 'back', 'forward', 'reload'],
-          description: 'go 跳到 url（默认）；back / forward / reload 不用给 url',
+          description: t('tool.nav.action'),
         },
-        url: { type: 'string', description: 'action=go 时的目标网址' },
-        tab: { type: 'string', description: TAB_DESC },
+        url: { type: 'string', description: t('tool.nav.url') },
+        tab: { type: 'string', description: TAB },
       },
       output: textOutput,
       presentCall: present('Browser navigate'),
@@ -790,14 +789,14 @@ export function apply(ctx, config) {
         const tabId = await resolveTab(args.tab)
         const action = args.action || 'go'
         if (action === 'go') {
-          if (!args.url) throw new Error('action=go 需要 url')
+          if (!args.url) throw new Error(t('err.navNeedsUrl'))
           const r = await call('nav', { tabId, url: args.url, wait: true }, 60000)
           const late = r.loaded === false ? '（页面还没加载完，需要的话 browser_wait 等一下）' : ''
           return { text: `已到 ${r.url}${r.title ? ` — ${r.title}` : ''}${late}` }
         }
         const r = await historyNav(call, tabId, action)
         const verb = { back: '已后退到', forward: '已前进到', reload: '已刷新' }[action]
-        if (!verb) throw new Error(`不认识的 action: ${action}`)
+        if (!verb) throw new Error(t('err.unknownAction', { action }))
         const late = r.done ? '' : '（页面还没加载完，需要的话 browser_wait 等一下）'
         return { text: `${verb} ${r.url}${r.title ? ` — ${r.title}` : ''}${late}` }
       },
@@ -806,15 +805,13 @@ export function apply(ctx, config) {
     // ── 截图 ────────────────────────────────────────────────────────────────
     defineTool({
       name: 'browser_screenshot',
-      description:
-        '给页面截图，图片会直接返回给你看。mode=viewport 当前视口、full 整页、element 只截某个元素（要 ref 或 selector）。' +
-        '页内光标会一起入镜，所以你能和用户看到同一画面。',
+      description: t('tool.screenshot.desc'),
       parameters: {
-        mode: { type: 'string', required: true, enum: ['viewport', 'full', 'element'], description: '截多大范围' },
-        tab: { type: 'string', description: TAB_DESC },
-        ref: { type: 'integer', description: `mode=element 时截哪个元素：${REF_DESC}` },
-        selector: { type: 'string', description: 'mode=element 时截哪个元素（CSS 选择器）' },
-        format: { type: 'string', description: 'png（默认）或 jpeg' },
+        mode: { type: 'string', required: true, enum: ['viewport', 'full', 'element'], description: t('tool.screenshot.mode') },
+        tab: { type: 'string', description: TAB },
+        ref: { type: 'integer', description: t('tool.screenshot.ref', { ref: REF }) },
+        selector: { type: 'string', description: t('tool.screenshot.selector') },
+        format: { type: 'string', description: t('tool.screenshot.format') },
       },
       output: {
         schema: {
@@ -843,10 +840,10 @@ export function apply(ctx, config) {
         let r
         if (args.mode === 'element') {
           const hasRef = args.ref !== undefined && args.ref !== null
-          if (!hasRef && !args.selector) throw new Error('mode=element 需要 ref 或 selector')
+          if (!hasRef && !args.selector) throw new Error(t('err.shotNeedsTarget'))
           // 自己取框再直接截：扩展的 shot(selector) 取框只等 rAF，后台标签页里会卡满 15 秒
           const box = await elementBox(call, tabId, { ref: hasRef ? args.ref : undefined, selector: args.selector })
-          if (!box || box.width < 1 || box.height < 1) throw new Error('这个元素没有大小（可能被隐藏了），截不了')
+          if (!box || box.width < 1 || box.height < 1) throw new Error(t('err.shotZeroSize'))
           const capture = () => call('cdp', {
             tabId, method: 'Page.captureScreenshot', params: { format, clip: { ...box, scale: 1 } },
           }, 90000)
@@ -856,8 +853,8 @@ export function apply(ctx, config) {
           let timer
           const late = new Promise((r) => { timer = setTimeout(r, 15000, null) })
           const shot = (await Promise.race([first, late]).finally(() => clearTimeout(timer))) || (await capture())
-          const t = (await call('tabs')).find((x) => x.id === tabId)
-          r = { data: shot.result.data, format, url: t && t.url, title: t && t.title }
+          const tabInfo = (await call('tabs')).find((x) => x.id === tabId)
+          r = { data: shot.result.data, format, url: tabInfo && tabInfo.url, title: tabInfo && tabInfo.title }
         } else {
           r = await call('shot', { tabId, format, full: args.mode === 'full' }, 90000)
         }
@@ -893,12 +890,10 @@ export function apply(ctx, config) {
     // ── 跑 JS ───────────────────────────────────────────────────────────────
     defineTool({
       name: 'browser_eval',
-      description:
-        '在页面里执行一段 JS 并拿到返回值。适合读选择器拿不到的状态、检查 DOM、触发页面自己的函数。' +
-        '返回值会被 JSON 序列化。注意：它跑在页面上下文里，别用它点击（用 browser_click）。',
+      description: t('tool.eval.desc'),
       parameters: {
-        expression: { type: 'string', required: true, description: '要执行的 JS 表达式；多语句请包成 IIFE 并 return' },
-        tab: { type: 'string', description: TAB_DESC },
+        expression: { type: 'string', required: true, description: t('tool.eval.expression') },
+        tab: { type: 'string', description: TAB },
       },
       output: textOutput,
       presentCall: present('Browser eval'),
@@ -913,16 +908,14 @@ export function apply(ctx, config) {
     // ── 等元素 ──────────────────────────────────────────────────────────────
     defineTool({
       name: 'browser_wait',
-      description:
-        '等页面变成某个样子再往下走，比 sleep 靠谱。三选一：selector 等元素出现（且可见）、' +
-        'text 等页面上出现某段文字、url 等网址包含某段（跳转/登录后用）。gone=true 反过来等它消失（比如加载圈）。',
+      description: t('tool.wait.desc'),
       parameters: {
-        selector: { type: 'string', description: 'CSS 选择器' },
-        text: { type: 'string', description: '页面可见文字里要出现的一段' },
-        url: { type: 'string', description: '网址里要包含的一段' },
-        gone: { type: 'boolean', description: 'true = 等它消失，默认 false' },
-        tab: { type: 'string', description: TAB_DESC },
-        timeoutMs: { type: 'integer', description: `超时毫秒，默认 15000，最多 ${WAIT_MAX_MS}` },
+        selector: { type: 'string', description: t('tool.wait.selector') },
+        text: { type: 'string', description: t('tool.wait.text') },
+        url: { type: 'string', description: t('tool.wait.url') },
+        gone: { type: 'boolean', description: t('tool.wait.gone') },
+        tab: { type: 'string', description: TAB },
+        timeoutMs: { type: 'integer', description: t('tool.wait.timeoutMs', { max: WAIT_MAX_MS }) },
       },
       output: textOutput,
       presentCall: present('Browser wait'),
@@ -931,7 +924,7 @@ export function apply(ctx, config) {
         const timeoutMs = Math.min(Number(args.timeoutMs || 15000), WAIT_MAX_MS)
         const has = (v) => v !== undefined && v !== null && v !== ''
         const given = [args.selector, args.text, args.url].filter(has).length
-        if (given !== 1) throw new Error('selector / text / url 给且只给一个')
+        if (given !== 1) throw new Error(t('err.waitNeedsOne'))
         if (has(args.selector) && !args.gone) {
           const r = await call('waitFor', { tabId, selector: args.selector, timeoutMs, visible: true }, timeoutMs + 15000)
           return { text: `等到了 ${args.selector} @ (${r.x}, ${r.y})「${r.text}」，用了 ${r.waitedMs}ms` }
@@ -950,12 +943,11 @@ export function apply(ctx, config) {
     // ── 弹窗 ────────────────────────────────────────────────────────────────
     defineTool({
       name: 'browser_dialog',
-      description:
-        '处理 alert / confirm / prompt 弹窗。弹窗会把页面里后续所有操作卡死，所以 browser_read(what=info) 报有弹窗时先调它。',
+      description: t('tool.dialog.desc'),
       parameters: {
-        action: { type: 'string', required: true, enum: ['accept', 'dismiss'], description: 'accept 确定，dismiss 取消' },
-        tab: { type: 'string', description: TAB_DESC },
-        text: { type: 'string', description: 'prompt 弹窗要填的内容' },
+        action: { type: 'string', required: true, enum: ['accept', 'dismiss'], description: t('tool.dialog.action') },
+        tab: { type: 'string', description: TAB },
+        text: { type: 'string', description: t('tool.dialog.text') },
       },
       output: textOutput,
       presentCall: present('Browser dialog'),
@@ -969,24 +961,20 @@ export function apply(ctx, config) {
     // ── 拖拽 ────────────────────────────────────────────────────────────────
     defineTool({
       name: 'browser_drag',
-      description:
-        '把一个东西拖到另一个地方：排序列表、看板卡片、滑块、拖文件进框、画布等。' +
-        '起点和终点各用 ref（snapshot 编号）、selector、text（可见文字）或 x/y 坐标给一个；' +
-        '放置区（「拖到这里」那种框）一般没编号，用 toText 按文字找最省事。' +
-        '带 draggable 的 HTML5 拖放和靠鼠标拖的组件都能处理，拖完截图或读页面确认一下结果。',
+      description: t('tool.drag.desc'),
       parameters: {
-        tab: { type: 'string', description: TAB_DESC },
-        fromRef: { type: 'integer', description: `起点：${REF_DESC}` },
-        fromSelector: { type: 'string', description: '起点：CSS 选择器' },
-        fromText: { type: 'string', description: '起点：按可见文字找元素' },
-        fromX: { type: 'integer', description: '起点：视口 X 坐标（配合 fromY）' },
-        fromY: { type: 'integer', description: '起点：视口 Y 坐标' },
-        toRef: { type: 'integer', description: '终点：元素编号' },
-        toSelector: { type: 'string', description: '终点：CSS 选择器' },
-        toText: { type: 'string', description: '终点：按可见文字找元素（找放置区最好用）' },
-        toX: { type: 'integer', description: '终点：视口 X 坐标（配合 toY）' },
-        toY: { type: 'integer', description: '终点：视口 Y 坐标' },
-        steps: { type: 'integer', description: '鼠标拖动分几步走完，默认 12（滑块要细一点可以调大）' },
+        tab: { type: 'string', description: TAB },
+        fromRef: { type: 'integer', description: t('tool.drag.fromRef', { ref: REF }) },
+        fromSelector: { type: 'string', description: t('tool.drag.fromSelector') },
+        fromText: { type: 'string', description: t('tool.drag.fromText') },
+        fromX: { type: 'integer', description: t('tool.drag.fromX') },
+        fromY: { type: 'integer', description: t('tool.drag.fromY') },
+        toRef: { type: 'integer', description: t('tool.drag.toRef') },
+        toSelector: { type: 'string', description: t('tool.drag.toSelector') },
+        toText: { type: 'string', description: t('tool.drag.toText') },
+        toX: { type: 'integer', description: t('tool.drag.toX') },
+        toY: { type: 'integer', description: t('tool.drag.toY') },
+        steps: { type: 'integer', description: t('tool.drag.steps') },
       },
       output: textOutput,
       presentCall: present('Browser drag'),
@@ -1000,7 +988,10 @@ export function apply(ctx, config) {
           const x = args[`${p}X`]
           const y = args[`${p}Y`]
           if (x !== undefined && x !== null && y !== undefined && y !== null) return { x: Number(x), y: Number(y) }
-          throw new Error(`${p === 'from' ? '起点' : '终点'}要给 ${p}Ref、${p}Selector、${p}Text 或 ${p}X+${p}Y 之一`)
+          throw new Error(t('err.dragNeedsEnd', {
+            which: p === 'from' ? t('which.start') : t('which.end'),
+            ref: `${p}Ref`, sel: `${p}Selector`, txt: `${p}Text`, xy: `${p}X+${p}Y`,
+          }))
         }
         const from = end('from')
         const to = end('to')
@@ -1023,18 +1014,14 @@ export function apply(ctx, config) {
     // ── 下载 ────────────────────────────────────────────────────────────────
     defineTool({
       name: 'browser_download',
-      description:
-        '把链接指向的文件（发票、报表、PDF、图片……）下载到本机，带着用户在 Chrome 里的登录状态。' +
-        '给 ref（snapshot 里的链接编号）、selector 或 url 三选一；相对地址按页面算，blob: / data: 链接也行。' +
-        '默认存进「下载」文件夹，to=workdir 存进会话工作目录；同名不覆盖，自动加 (1)。' +
-        '下载按钮不是链接（点了才生成文件）的话：先 browser_click 它，再用 browser_devtools action=network 找到文件网址，交给这里。',
+      description: t('tool.download.desc'),
       parameters: {
-        ref: { type: 'integer', description: REF_DESC },
-        selector: { type: 'string', description: 'CSS 选择器（指向 a / img / video / source 等带地址的元素）' },
-        url: { type: 'string', description: '要下载的网址，可以是相对地址' },
-        tab: { type: 'string', description: TAB_DESC },
-        filename: { type: 'string', description: '存成什么名字；省略时用服务器给的名字或网址里的名字' },
-        to: { type: 'string', enum: ['downloads', 'workdir'], description: 'downloads（默认）存进「下载」文件夹；workdir 存进会话工作目录' },
+        ref: { type: 'integer', description: REF },
+        selector: { type: 'string', description: t('tool.download.selector') },
+        url: { type: 'string', description: t('tool.download.url') },
+        tab: { type: 'string', description: TAB },
+        filename: { type: 'string', description: t('tool.download.filename') },
+        to: { type: 'string', enum: ['downloads', 'workdir'], description: t('tool.download.to') },
       },
       output: textOutput,
       presentCall: present('Download file'),
@@ -1043,7 +1030,7 @@ export function apply(ctx, config) {
         let dir = downloadsDir()
         if (args.to === 'workdir') {
           dir = sessionCwd(exec)
-          if (!dir) throw new Error('拿不到会话工作目录，去掉 to=workdir 存进「下载」文件夹')
+          if (!dir) throw new Error(t('err.noWorkdir'))
         }
         const r = await download(call, tabId, {
           url: args.url || undefined,
@@ -1063,27 +1050,24 @@ export function apply(ctx, config) {
     // ── 调试：控制台 / 网络 ──────────────────────────────────────────────────
     defineTool({
       name: 'browser_devtools',
-      description:
-        '像开发者工具那样查网页：console 看控制台输出和 JS 报错；network 看网络请求（状态码、耗时）；' +
-        'response 看某个请求的返回内容（接口返回的 JSON 等）；clear 清空这个标签页的记录。' +
-        '页面「点了没反应」「数据没出来」「白屏」时先查这里。',
+      description: t('tool.devtools.desc'),
       parameters: {
         action: {
           type: 'string', required: true, enum: ['console', 'network', 'response', 'clear'],
-          description: '要看什么',
+          description: t('tool.devtools.action'),
         },
-        tab: { type: 'string', description: TAB_DESC },
+        tab: { type: 'string', description: TAB },
         level: {
           type: 'string', enum: ['all', 'warning', 'error'],
-          description: 'action=console：error 只看报错，warning 报错+警告，默认 all',
+          description: t('tool.devtools.level'),
         },
-        filter: { type: 'string', description: 'console/network：只留包含这段文字的条目（网址、方法、内容都算）' },
+        filter: { type: 'string', description: t('tool.devtools.filter') },
         reload: {
           type: 'boolean',
-          description: 'action=network：先刷新页面，抓到加载过程的全部请求（只记得到调试器接上之后的请求）',
+          description: t('tool.devtools.reload'),
         },
-        request: { type: 'string', description: 'action=response：network 列表里 # 后面的编号' },
-        limit: { type: 'integer', description: 'console/network 最多几条（默认 40）；response 最多几个字（默认 6000）' },
+        request: { type: 'string', description: t('tool.devtools.request') },
+        limit: { type: 'integer', description: t('tool.devtools.limit') },
       },
       output: textOutput,
       presentCall: present('Browser devtools'),
@@ -1100,7 +1084,7 @@ export function apply(ctx, config) {
           case 'clear':
             return { text: await clearLogs(call, tabId) }
           default:
-            throw new Error(`不认识的 action: ${args.action}`)
+            throw new Error(t('err.unknownAction', { action: args.action }))
         }
       },
     }),
