@@ -10,7 +10,7 @@ import assert from 'node:assert'
 import fs from 'node:fs'
 import vm from 'node:vm'
 
-const src = fs.readFileSync(new URL('../plugin/vendor/extension/background.js', import.meta.url), 'utf8')
+const src = fs.readFileSync(new URL('../plugin/vendor/extension/background.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n')   // Windows 检出是 CRLF
 const start = src.indexOf('async function ensureGroup(')
 const end = src.indexOf('\nasync function unmarkTab(')
 assert(start > 0 && end > start, 'background.js 里找不到 ensureGroup')
