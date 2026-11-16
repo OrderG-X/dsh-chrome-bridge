@@ -15,14 +15,23 @@ import { refElementJs } from './refs.js'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-/** 按可见文字找元素：包含这段文字、看得见的元素里面积最小的那个（最贴近文字本身）。 */
+/**
+ * 按可见文字找元素：看得见、包含这段文字的元素里，文字正好就是这段的优先
+ * （不然「顺序：Item A, Item B…」这种把几项连在一起的小段落会比列表项本身还小，抢走匹配），
+ * 同一档里取面积最小的那个（最贴近文字本身）。
+ */
 const textElementJs = (text) => `((t) => {
-  let best = null, area = Infinity;
+  const norm = (s) => String(s || '').replace(/\\s+/g, ' ').trim();
+  const want = norm(t);
+  let best = null, area = Infinity, exact = false;
   for (const el of document.body.querySelectorAll('*')) {
     if (!(el.textContent || '').includes(t) || !(el.innerText || '').includes(t)) continue;
     const r = el.getBoundingClientRect();
-    if (r.width < 1 || r.height < 1 || r.width * r.height >= area) continue;
-    best = el; area = r.width * r.height;
+    if (r.width < 1 || r.height < 1) continue;
+    const ex = norm(el.innerText) === want;
+    if (exact && !ex) continue;
+    if (ex === exact && r.width * r.height >= area) continue;
+    best = el; area = r.width * r.height; exact = ex;
   }
   return best;
 })(${JSON.stringify(String(text))})`
@@ -46,6 +55,7 @@ const PLAN_JS = (from, to) => `(async () => {
   const dst = ${elementJs(to)};
   if (${isElementEnd(from)} && !src) return { missing: 'from' };
   if (${isElementEnd(to)} && !dst) return { missing: 'to' };
+  if (src && src === dst) return { same: true };
   if (src) {
     src.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
     // 后台标签页会暂停 rAF，定时器兜底
@@ -92,6 +102,7 @@ export async function drag(call, tabId, from, to, { steps = 12, cursor } = {}) {
     throw new Error(`没找到${plan.missing === 'from' ? '起点' : '终点'} ${describe(end)}` +
       (hasRef(end) ? '（编号可能已失效，重新 snapshot）' : ''))
   }
+  if (plan.same) throw new Error(`起点 ${describe(from)} 和终点 ${describe(to)} 找到的是同一个元素——换个更具体的写法（ref 或 selector）`)
   const { a, b } = plan
   if (!plan.bIn) throw new Error(`终点 ${describe(to)} 不在当前屏幕里——先滚动让起点和终点都露出来`)
 

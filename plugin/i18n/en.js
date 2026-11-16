@@ -9,17 +9,17 @@
 export default {
   // ── shared ──────────────────────────────────────────────────────────────
   'param.tab': 'Tab id (number), or "active" for the tab the user is currently looking at. When omitted, the tab this session opened or last acted on is reused; with none, the call fails — it never falls back to the tab the user is on',
-  'param.ref': 'Element ref: the [N] numbers listed by browser_read(what=snapshot). Most reliable — with a ref there is no need to guess a selector',
+  'param.ref': 'Element ref: the [N] numbers listed by browser_read(what=snapshot). Most reliable — when you have a ref, do not guess a selector',
 
   // ── browser_tabs ───────────────────────────────────────────────────────
-  'tool.tabs.desc': 'List / find / open / close / switch Chrome tabs. Every other browser_* tool takes a tab argument, so call this first to get an id. It drives the user\'s real Chrome (logins intact) and never spins up a clean browser. Pages opened with open go into a separate "DSH work window" in the background without stealing focus, so the page the user is looking at is left alone.',
-  'tool.tabs.action': 'list all; find filters by title/URL; open opens a new tab (background work window by default); close closes it; activate brings it to the front (that pulls the window in front of the user, so only when asked)',
+  'tool.tabs.desc': 'List / find / open / close / switch Chrome tabs. Every other browser_* tool takes a tab argument, so call this first to get an id. It drives the user\'s real Chrome (logins intact) and never spins up a clean browser. Pages opened with open go by default into a separate "DSH work window" in the background without stealing focus, so the page the user is looking at is left alone.',
+  'tool.tabs.action': 'list all; find filters by title/URL; open opens a new tab (background work window by default); close closes it; activate brings it to the front (that pulls the window in front of the user — do not use it unless asked)',
   'tool.tabs.query': 'Keyword for action=find (matches title or URL)',
   'tool.tabs.url': 'URL to open when action=open',
   'tool.tabs.tab': 'Tab id for action=close/activate',
 
   // ── browser_read ───────────────────────────────────────────────────────
-  'tool.read.desc': 'Read page content. what=snapshot lists the elements you can click/fill, each with a [N] ref — call it first when you are about to act, then pass ref=N straight to browser_click / browser_input; that beats guessing selectors (elements inside same-origin iframes are listed too and can be used by ref); text returns the visible text (best for scraping content); html returns the outer HTML; attr returns one attribute; info returns title/URL/viewport and tells you whether a dialog is blocking the page (if so, call browser_dialog first).',
+  'tool.read.desc': 'Read page content. what=snapshot lists the elements you can click/fill, each with a [N] ref — call it first when you are about to act, then pass ref=N straight to browser_click / browser_input; that beats guessing selectors (elements inside same-origin iframes are listed too and can be used by ref); text returns the visible text (best for scraping content); html returns the outer HTML; attr returns one attribute; info returns title/URL/viewport and tells you whether an alert/confirm/prompt dialog is blocking the page (if so, call browser_dialog first).',
   'tool.read.what': 'What to read',
   'tool.read.selector': 'CSS selector; for snapshot/text/html it defaults to the whole page',
   'tool.read.name': 'Attribute to read when what=attr, e.g. href',
@@ -150,7 +150,7 @@ export default {
   'hint.extOpened': 'I opened chrome://extensions for you (background tab)%store',
   'hint.extOpenedStore': '; check that DSH Bridge is enabled there',
   'hint.copied': 'The extension folder path is already on the clipboard (%how)',
-  'hint.copiedMac': 'in the file picker press ⌘⇧G, then ⌘V',
+  'hint.copiedMac': 'in the file picker press ⌘⇧G, then ⌘V and Enter',
   'hint.copiedWin': 'paste it into the file picker\'s address bar and press Enter',
   'hint.notes': '\n(%notes)',
   'hint.notesSep': '; ',

@@ -133,7 +133,7 @@ Until step 2 is done the `browser_*` tools fail **loudly with exactly these step
 
 ### 🌍 Tool descriptions in English or Russian
 
-What the model reads for the `browser_*` tools — descriptions, parameter docs, and every error those tools raise — is Chinese by default. Point `config.locale` at `en` or `ru` and DSH hands the model English / Russian text instead; tool names, arguments and results stay exactly the same:
+What the model reads for the `browser_*` tools — descriptions, parameter docs, and the errors for bad arguments or a missing connection — is Chinese by default. Point `config.locale` at `en` or `ru` and DSH hands the model English / Russian text instead; tool names, arguments and results stay exactly the same:
 
 ```yaml
 # the profile's patch layer, e.g. ~/.dsh/profiles/<profile>/cordis.patch.yml
@@ -142,7 +142,7 @@ What the model reads for the `browser_*` tools — descriptions, parameter docs,
     locale: en      # en | ru | zh (default)
 ```
 
-Restart DSH after changing it — the descriptions are part of the context a session gets when it starts. A translation that misses a key, or drops a `%placeholder` the Chinese text needs, falls back to Chinese for that one string, so nothing ever comes out half-empty or with a missing detail. Not translated yet: tool results, the settings card, the popup and the native host messages — that is a separate change.
+Restart DSH after changing it — the descriptions are part of the context a session gets when it starts. A translation that misses a key, or drops a `%placeholder` the Chinese text needs, falls back to Chinese for that one string, so nothing ever comes out half-empty or with a missing detail. Not translated yet: tool results, the install steps shown when Chrome isn't connected, errors raised deeper inside some actions (snapshot refs, navigation, drag, downloads, DevTools), the settings card, the popup and the native host messages — that is a separate change. The model handles those Chinese messages fine; they just aren't in your language yet.
 
 ### 👀 What you see while it works
 

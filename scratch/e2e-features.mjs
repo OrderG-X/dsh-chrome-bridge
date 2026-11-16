@@ -51,6 +51,19 @@ export async function featureChecks({ check, tools, browserCdp }) {
         return send(200, 'application/pdf', '%PDF-1.4 fake', { 'content-disposition': `attachment; filename="invoice.pdf"; filename*=UTF-8''${encodeURIComponent('发票 2026.pdf')}` })
       case '/files/big.bin': return send(200, 'application/octet-stream', BIG, { 'content-length': String(BIG.length) })
       case '/files/login': return send(200, 'text/html; charset=utf-8', '<form>请先登录</form>')
+      // 列表下面有一行把几项连在一起的小字：按文字拖时要找列表项本身，不能被这行抢走
+      case '/drag': return send(200, 'text/html; charset=utf-8', `<!doctype html><meta charset=utf-8><title>拖拽</title>
+<style>li{width:600px;padding:8px;margin:4px 0;list-style:none;background:#eef}#order{display:inline-block;font-size:11px;margin:0}</style>
+<ul id="list"><li draggable="true">Item A</li><li draggable="true">Item B</li><li draggable="true">Item C</li><li draggable="true">Item D</li></ul>
+<p id="order"></p>
+<script>
+const list = document.getElementById('list'); let dragged = null
+const show = () => { document.getElementById('order').textContent = 'Order: ' + [...list.children].map((li) => li.textContent).join(', ') }
+list.addEventListener('dragstart', (e) => { dragged = e.target.closest('li') })
+list.addEventListener('dragover', (e) => e.preventDefault())
+list.addEventListener('drop', (e) => { e.preventDefault(); const t = e.target.closest('li'); if (dragged && t && t !== dragged) list.insertBefore(dragged, t); show() })
+show()
+</script>`)
       default: return send(404, 'text/plain', 'not found')
     }
   })
@@ -141,6 +154,19 @@ export async function featureChecks({ check, tools, browserCdp }) {
     const defFile = (/已下载：(.+?)（/.exec(def.text) || [])[1]
     if (defFile) inDownloads.push(defFile)
     check('默认存进「下载」文件夹', defFile && path.dirname(defFile) === path.join(os.homedir(), 'Downloads') && fs.existsSync(defFile), def.text)
+
+    // ── 按文字拖：文字正好相同的元素优先；起点终点同一个元素要报错 ──
+    const nav = await run('browser_nav', { tab, url: `http://127.0.0.1:${portA}/drag` })
+    check('打开拖拽测试页', nav.ok, nav.text)
+    const order = async () => (await run('browser_eval', { tab, expression: "document.getElementById('order').textContent" })).text
+    // 测试页本身要成立：那行小字得比列表项小，不然旧的「面积最小」逻辑也能过
+    const smaller = (await run('browser_eval', { tab, expression: "(() => { const a = (el) => { const r = el.getBoundingClientRect(); return r.width * r.height }; return String(a(document.getElementById('order')) < a(document.querySelector('li'))) })()" })).text
+    check('拖拽测试页：那行小字比列表项小', smaller === 'true', smaller)
+    const dr = await run('browser_drag', { tab, fromText: 'Item C', toText: 'Item A' })
+    const o1 = await order()
+    check('按文字拖：找的是列表项，不是连着几项的那行小字', dr.ok && o1 === 'Order: Item C, Item A, Item B, Item D', `${dr.text} | ${o1}`)
+    const same = await run('browser_drag', { tab, fromText: 'Item B', toText: 'Item B' })
+    check('起点终点是同一个元素时报错、不乱拖', !same.ok && same.text.includes('同一个元素') && (await order()) === o1, same.text)
   } finally {
     for (const f of inDownloads) try { fs.rmSync(f, { force: true }) } catch {}
     try { fs.rmSync(work, { recursive: true, force: true }) } catch {}

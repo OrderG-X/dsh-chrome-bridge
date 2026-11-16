@@ -142,7 +142,7 @@ export default {
   'err.shotNeedsTarget': 'mode=element 需要 ref 或 selector',
   'err.shotZeroSize': '这个元素没有大小（可能被隐藏了），截不了',
   'err.waitNeedsOne': 'selector / text / url 给且只给一个',
-  'err.dragNeedsEnd': '%which 要给 %ref、%sel、%txt 或 %xy 之一',
+  'err.dragNeedsEnd': '%which要给 %ref、%sel、%txt 或 %xy 之一',
   'err.noWorkdir': '拿不到会话工作目录，去掉 to=workdir 存进「下载」文件夹',
   'which.start': '起点',
   'which.end': '终点',
