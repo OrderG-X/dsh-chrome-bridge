@@ -177,32 +177,23 @@ print(ok[0]['id'] if ok else '')")
     TMP="$(mktemp -d)"
     trap 'rm -rf "$TMP"' EXIT
     cp -R "$VENDOR/extension/." "$TMP/"
-    # 商店后台的 Summary 直接取包里的 description（只读、≤132 字）。
-    # 中英双语：包里放 _locales/en 和 _locales/zh_CN，description 走 __MSG_extDescription__，
-    # 两句摘要都取自 listing.md；有了 _locales，后台「商品详情」才能加中文（简体）那份。
+    # 商店后台的 Summary 直接取包里的 description（只读、≤132 字）：description 走 __MSG_extDescription__，
+    # 各语言的一句话在扩展自带的 _locales/<语言>/messages.json 里（本地解压版和商店版用同一份），这里只去掉 key、查一遍长度。
     node -e '
-      const fs = require("fs"), path = require("path"), [p, listing] = process.argv.slice(1);
+      const fs = require("fs"), path = require("path"), [p] = process.argv.slice(1);
       const m = JSON.parse(fs.readFileSync(p, "utf8"));
       delete m.key;
-      const text = fs.readFileSync(listing, "utf8");
-      const pick = (label) => {
-        const r = new RegExp("\\*\\*" + label + "\\*\\*[^\\n]*\\n+```\\n([^\\n]+)\\n```").exec(text);
-        if (!r || [...r[1]].length > 132) { console.error(`listing.md 里找不到 ${label}，或超过 132 字`); process.exit(1) }
-        return r[1];
-      };
-      const sums = { en: pick("Summary"), zh_CN: pick("Summary \\(zh_CN\\)") };
-      for (const [loc, msg] of Object.entries(sums)) {
-        const dir = path.join(path.dirname(p), "_locales", loc);
-        fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(path.join(dir, "messages.json"), JSON.stringify({ extDescription: { message: msg } }, null, 2) + "\n");
+      const dir = path.join(path.dirname(p), "_locales");
+      if (m.default_locale !== "en" || m.description !== "__MSG_extDescription__" || !fs.existsSync(path.join(dir, "en"))) { console.error("manifest 的 default_locale / description 不对，或缺 _locales/en"); process.exit(1) }
+      for (const loc of fs.readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)) {
+        const msg = JSON.parse(fs.readFileSync(path.join(dir, loc, "messages.json"), "utf8")).extDescription.message;
+        if ([...msg].length > 132) { console.error(`_locales/${loc} 的摘要超过 132 字`); process.exit(1) }
       }
-      m.default_locale = "en";
-      m.description = "__MSG_extDescription__";
       fs.writeFileSync(p, JSON.stringify(m, null, 2) + "\n");
-    ' "$TMP/manifest.json" "$REPO/store/listing.md" || exit 1
+    ' "$TMP/manifest.json" || exit 1
     mkdir -p "$REPO/dist"
     rm -f "$OUT"
-    ( cd "$TMP" && zip -qr "$OUT" . -x '.*' )
+    ( cd "$TMP" && zip -qr "$OUT" . -x '.*' '*/.*' )   # 子目录里的 .DS_Store 之类也不带
     ver="$(node -e 'console.log(require(process.argv[1]).version)' "$TMP/manifest.json")"
     echo "商店包：${OUT}（扩展 v${ver}，$(wc -c < "$OUT" | tr -d ' ') bytes，manifest 已去掉 key）"
     echo "zip 内容："

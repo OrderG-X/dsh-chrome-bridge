@@ -100,7 +100,7 @@ try {
     }
   })
 
-  await check('全部松手', async () => {
+  await check('全部放开', async () => {
     const r = await req('POST', { action: 'releaseAll' })
     assert.equal(r.status, 200)
     assert.equal(r.body.attachedCount, 0)

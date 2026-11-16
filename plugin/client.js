@@ -1,7 +1,7 @@
 /**
  * dsh-chrome-bridge 的网页端：DSH「插件」页里我们这张卡的设置页。
  *
- *   连接状态（扩展 / 本地宿主、版本、正在控制哪些标签页）+ 全部松手
+ *   连接状态（扩展 / 本机程序、版本、正在控制哪些标签页）+ 全部放开；文字有中 / 英 / 俄三份，跟着 DSH 的界面语言
  *   三个开关：允许 DSH 控制浏览器（这里只能关）、页面里显示 DSH 光标、新页开在单独窗口
  *   没连上时：差哪一步、一键帮你打开安装页
  *
@@ -49,20 +49,20 @@ window.__ModuleLoader__.load({
       localBuild: '本地版',
       controlling: '正在控制 %n 个标签页',
       controllingIdle: '没有在控制的标签页',
-      releaseAll: '全部松手',
-      released: '已全部松手',
+      releaseAll: '全部放开',
+      released: '已全部放开',
       allowControl: '允许 DSH 控制浏览器',
-      allowControlHint: '关掉后，DSH 的浏览器操作会被直接拒绝。重新打开要到 Chrome 工具栏的 DSH Bridge 面板里点 —— 这样模型自己没法把它打开。',
-      resumeInChrome: '要恢复，请点 Chrome 工具栏上的 DSH Bridge 图标，打开「允许 DSH 控制浏览器」。',
+      allowControlHint: '关掉后，DSH 碰不了浏览器。要重新打开，得去 Chrome 工具栏点 DSH Bridge 图标——DSH 自己打不开。',
+      resumeInChrome: '要恢复：点 Chrome 工具栏上的 DSH Bridge 图标，在里面把控制重新打开。',
       showCursor: '页面里显示 DSH 光标',
-      showCursorHint: '关掉只是不画光标，点击、输入照做。',
+      showCursorHint: '关掉只是不显示光标，点击、输入照做。',
       ownWindow: '新页开在单独窗口',
-      ownWindowHint: 'DSH 新开的页放进一个单独的 Chrome 窗口（登录状态照样在），不往你正在用的窗口里塞标签页、不抢焦点。关掉就开在你当前窗口的后台。',
-      ownWindowOld: 'Chrome 里的扩展更新到 1.13 后才有这个开关；现在新页开在你当前窗口的后台。',
-      outdated: 'Chrome 里的扩展版本较旧，更新后才能在这里切换开关。',
+      ownWindowHint: 'DSH 新开的页放进一个单独的 Chrome 窗口，登录状态照样在，不往你正在用的窗口里塞，也不抢焦点。关掉就开在你当前窗口的后台。',
+      ownWindowOld: 'Chrome 里的扩展更新后才有这个开关，现在新页开在你当前窗口的后台。',
+      outdated: 'Chrome 里的扩展版本旧了，更新后才能在这里改开关。',
       setupTitle: '还差一步：把扩展装进 Chrome',
-      setupStoreTitle: '扩展装了，但没连上',
-      setupStep1: '打开 Chrome，地址栏进入 chrome://extensions，右上角打开「开发者模式」',
+      setupStoreTitle: '扩展装好了，但还没连上',
+      setupStep1: '打开 Chrome，地址栏输入 chrome://extensions，打开右上角的「开发者模式」',
       setupStep2: '点「加载已解压的扩展程序」，选这个文件夹：',
       setupStep3: '装好后这里会自动变成「已连接」',
       setupStoreAlt: '更省事：直接从 Chrome 应用商店装，不用开发者模式。',
@@ -76,7 +76,7 @@ window.__ModuleLoader__.load({
       pathCopiedWin: '，文件夹路径也复制好了（粘进文件框顶上的地址栏、回车）',
       plugin: '插件 v%v',
       guide: '使用说明',
-      failed: '操作没成功：%e',
+      failed: '没成功：%e',
       unreachable: '读不到插件状态，重启 DSH 后再试',
     }
     const en = {
@@ -97,16 +97,16 @@ window.__ModuleLoader__.load({
       releaseAll: 'Release all',
       released: 'Released all tabs',
       allowControl: 'Allow DSH to control the browser',
-      allowControlHint: 'When off, DSH browser actions are refused. Turning it back on is done from the DSH Bridge panel in Chrome\'s toolbar, so the model cannot re-enable it itself.',
-      resumeInChrome: 'To resume, click the DSH Bridge icon in Chrome\'s toolbar and turn on "Allow DSH to control the browser".',
+      allowControlHint: 'When off, DSH can\'t touch the browser. To turn it back on, click the DSH Bridge icon in Chrome\'s toolbar; DSH can\'t do that itself.',
+      resumeInChrome: 'To resume, click the DSH Bridge icon in Chrome\'s toolbar and turn control back on there.',
       showCursor: 'Show the DSH cursor on pages',
       showCursorHint: 'Off only hides the cursor; clicks and typing still happen.',
       ownWindow: 'Open new pages in a separate window',
-      ownWindowHint: 'Pages DSH opens go into their own Chrome window (same profile, so your logins work) instead of piling tabs into the window you are using, and never take focus. Off: they open as background tabs in your current window.',
-      ownWindowOld: 'This switch needs extension 1.13 or newer in Chrome; for now new pages open as background tabs in your current window.',
-      outdated: 'The extension in Chrome is outdated; update it to change these switches here.',
+      ownWindowHint: 'Pages DSH opens go into their own Chrome window, with your logins, instead of piling up in the window you are using, and never take focus. Off: background tabs in your current window.',
+      ownWindowOld: 'Update the extension in Chrome to get this switch; for now new pages open as background tabs in your current window.',
+      outdated: 'The extension in Chrome is out of date; update it to change these switches here.',
       setupTitle: 'One step left: add the extension to Chrome',
-      setupStoreTitle: 'The extension is installed but not connected',
+      setupStoreTitle: 'The extension is installed but not connected yet',
       setupStep1: 'Open chrome://extensions in Chrome and turn on Developer mode (top right)',
       setupStep2: 'Click "Load unpacked" and choose this folder:',
       setupStep3: 'This page turns to "Connected" once it is loaded',
@@ -123,6 +123,52 @@ window.__ModuleLoader__.load({
       guide: 'Guide',
       failed: 'That did not work: %e',
       unreachable: 'Could not read the plugin status; restart DSH and try again',
+    }
+
+    const ru = {
+      title: 'Управление Chrome',
+      checking: 'Проверка…',
+      connected: 'Подключено',
+      paused: 'Пауза',
+      disconnected: 'Не подключено',
+      unsupported: 'Работает только на macOS, Windows и Linux',
+      summaryOn: 'Подключено · вкладок под управлением: %n',
+      summaryIdle: 'Подключено, вкладок под управлением нет',
+      summaryOff: 'Chrome ещё не подключён — откройте, чтобы увидеть шаги',
+      summaryPaused: 'Пауза: DSH не может работать с браузером',
+      storeBuild: 'Из магазина',
+      localBuild: 'Локальная',
+      controlling: 'Вкладок под управлением: %n',
+      controllingIdle: 'Вкладок под управлением нет',
+      releaseAll: 'Отпустить все',
+      released: 'Все вкладки отпущены',
+      allowControl: 'Разрешить DSH управлять браузером',
+      allowControlHint: 'Выкл.: DSH не может трогать браузер. Включить обратно можно только через значок DSH Bridge на панели инструментов Chrome — сам DSH этого сделать не может.',
+      resumeInChrome: 'Чтобы продолжить, нажмите значок DSH Bridge на панели инструментов Chrome и снова включите управление.',
+      showCursor: 'Показывать курсор DSH',
+      showCursorHint: 'Выкл. только скрывает курсор, клики и ввод продолжаются.',
+      ownWindow: 'Новые страницы в отдельном окне',
+      ownWindowHint: 'Страницы, которые открывает DSH, попадают в отдельное окно Chrome (ваши входы в аккаунты сохраняются), не засоряют ваше окно и не перехватывают фокус. Выкл.: фоновые вкладки в текущем окне.',
+      ownWindowOld: 'Обновите расширение в Chrome, чтобы появился этот переключатель; пока новые страницы открываются фоном в текущем окне.',
+      outdated: 'Расширение в Chrome устарело; обновите его, чтобы менять переключатели здесь.',
+      setupTitle: 'Остался один шаг: добавить расширение в Chrome',
+      setupStoreTitle: 'Расширение установлено, но ещё не подключено',
+      setupStep1: 'Откройте в Chrome chrome://extensions и включите «Режим разработчика» справа вверху',
+      setupStep2: 'Нажмите «Загрузить распакованное расширение» и выберите эту папку:',
+      setupStep3: 'Как только расширение загрузится, здесь появится «Подключено»',
+      setupStoreAlt: 'Проще: установить из Chrome Web Store, режим разработчика не нужен.',
+      openStore: 'Открыть магазин',
+      storeOpened: 'Страница магазина открыта в Chrome — нажмите «Установить»',
+      setupStore1: 'Проверьте, что Chrome запущен, а расширение DSH Bridge включено',
+      setupStore2: 'Если не помогло — перезапустите Chrome',
+      openInstall: 'Открыть страницу установки',
+      installOpened: 'Страница расширений открыта в Chrome',
+      pathCopied: '; путь к папке скопирован (в окне выбора файлов ⌘⇧G, затем ⌘V)',
+      pathCopiedWin: '; путь к папке скопирован (вставьте его в адресную строку окна выбора файлов)',
+      plugin: 'Плагин v%v',
+      guide: 'Инструкция',
+      failed: 'Не получилось: %e',
+      unreachable: 'Не удалось прочитать состояние плагина; перезапустите DSH и попробуйте снова',
     }
 
     const fmt = (s, vars) => String(s).replace(/%([a-z])/g, (m, k) => (vars && k in vars ? String(vars[k]) : m))
@@ -335,7 +381,7 @@ window.__ModuleLoader__.load({
     function apply(ctx) {
       const t = ctx.locale && typeof ctx.locale.bind === 'function' ? ctx.locale.bind(NS) : (k) => zh[k] || k
       if (ctx.locale && typeof ctx.locale.register === 'function') {
-        ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-chrome-bridge: dictionaries')
+        ctx.effect(() => ctx.locale.register(NS, { zh, en, ru }), 'dsh-chrome-bridge: dictionaries')
       }
       const Card = makeCard(t)
       const mount = (name, key) => {

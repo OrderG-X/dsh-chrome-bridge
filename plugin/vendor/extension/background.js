@@ -312,7 +312,21 @@ async function detachIdle() {
 // 用户在标签栏上一眼就能看出"agent 正在动哪几个页面"，松手（空闲断开 / 显式 detach /
 // 关掉标签页 / 点掉 Chrome 那条调试提示）就自动还原，不留痕。
 
-const GROUP_TITLE = 'DSH agent 正在操作'
+// 用户看得见的两处文字（标签组名、工具栏图标的悬停提示）跟 Chrome 的界面语言走：zh* 中文、ru* 俄文、其它英文。
+// 认「我们的组」时几种语言的组名、以及老版本的「DSH agent 正在操作」都算，换了语言或升级后老组照样会被拆掉。
+const UI_LANG = (() => {
+  let l = ''
+  try { l = String(chrome.i18n.getUILanguage() || '').toLowerCase() } catch {}
+  return l.startsWith('zh') ? 'zh' : l.startsWith('ru') ? 'ru' : 'en'
+})()
+const GROUP_TITLES = { zh: 'DSH 正在操作', en: 'DSH at work', ru: 'DSH работает' }
+const GROUP_TITLE = GROUP_TITLES[UI_LANG]
+const OUR_GROUP_TITLES = new Set([...Object.values(GROUP_TITLES), 'DSH agent 正在操作'])
+const CURSOR_TAB_TITLE = {
+  zh: 'DSH 正在操作这个标签页（页面里有它的光标）',
+  en: 'DSH is working in this tab (its cursor is on the page)',
+  ru: 'DSH работает в этой вкладке (его курсор на странице)',
+}[UI_LANG]
 const CURSOR_ICON = { 16: 'icons/cursor16.png', 32: 'icons/cursor32.png', 48: 'icons/cursor48.png' }
 // 标签页上的小鼠标：把页面 favicon 临时换成它（data URL，绕开页面 CSP 与 web_accessible_resources）
 const CURSOR_FAVICON = 'data:image/png;base64,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'
@@ -387,7 +401,7 @@ async function ensureGroup(tabId) {
   if (tab.groupId >= 0) {
     let g = null
     try { g = await chrome.tabGroups.get(tab.groupId) } catch {}
-    if (!g || g.title !== GROUP_TITLE) return   // 用户自己的组
+    if (!g || !OUR_GROUP_TITLES.has(g.title)) return   // 用户自己的组
     groupedTabs.set(id, tab.groupId)            // 本来就在我们的组里（worker 重启过之类）
     ourGroup.set(wid, tab.groupId)
     return
@@ -396,8 +410,8 @@ async function ensureGroup(tabId) {
   if (ourGroup.has(wid)) candidates.push(ourGroup.get(wid))
   try {
     // 只找本窗口的：按标题跨窗口复用，会把标签页拽到别的窗口去
-    for (const g of await chrome.tabGroups.query({ title: GROUP_TITLE, windowId: wid })) {
-      if (!candidates.includes(g.id)) candidates.push(g.id)
+    for (const g of await chrome.tabGroups.query({ windowId: wid })) {
+      if (OUR_GROUP_TITLES.has(g.title) && !candidates.includes(g.id)) candidates.push(g.id)
     }
   } catch {}
   for (const gid of candidates) {
@@ -443,11 +457,11 @@ async function unmarkTab(tabId) {
  * 自愈：service worker 会被 Chrome 随时挂起、扩展重载也会清掉内存里的分组表，
  * 但 Chrome 那边的组是持久的。所以启动时对一遍账：
  *   · 还挂着调试会话的标签页 → 认领回分组表（继续归我们管）
- *   · 已经没会话、却还留在「🖱 DSH agent」组里的 → 拆掉还原（别留孤儿组和残留角标）
+ *   · 已经没会话、却还留在我们组里的（几种语言的组名、老版本的组名都算）→ 拆掉还原（别留孤儿组和残留角标）
  */
 async function reconcileGroups() {
   try {
-    const groups = await chrome.tabGroups.query({ title: GROUP_TITLE })
+    const groups = (await chrome.tabGroups.query({})).filter((g) => OUR_GROUP_TITLES.has(g.title))
     if (!groups.length) return
     let attachedIds = new Set()
     try {
@@ -904,7 +918,7 @@ async function markCursor(tabId, on) {
   const id = Number(tabId)
   try {
     await chrome.action.setIcon({ tabId: id, path: on ? CURSOR_ICON : IDLE_ICON })
-    await chrome.action.setTitle({ tabId: id, title: on ? 'DSH agent 正在操作这个标签页（页内有一只鼠标）' : '' })
+    await chrome.action.setTitle({ tabId: id, title: on ? CURSOR_TAB_TITLE : '' })
   } catch {}
   await setTabFavicon(id, on)
 }

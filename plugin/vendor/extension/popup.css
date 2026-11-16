@@ -205,7 +205,6 @@ code { font: 500 12.5px var(--mono); letter-spacing: -0.2px; }
 }
 .link { border: 0; background: none; padding: 0; color: var(--blue); font-size: 13px; font-weight: 500; cursor: pointer; }
 .link:active { opacity: 0.5; }
-.note { margin: 8px 16px 0; font-size: 12px; line-height: 1.45; color: var(--label-2); }
 
 .list { list-style: none; margin: 0; padding: 0; }
 .row { position: relative; display: flex; align-items: center; gap: 12px; min-height: 50px; padding: 9px 14px; }
@@ -222,6 +221,9 @@ code { font: 500 12.5px var(--mono); letter-spacing: -0.2px; }
   display: block; margin-top: 1px; font-size: 12px; color: var(--label-2);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* 开关下面那行小字：一句话说清关掉会怎样，长了就换行（俄文比中文长一截） */
+.row-hint { display: block; margin-top: 2px; font-size: 12px; line-height: 1.35; color: var(--label-2); }
+.toggle .row-title { white-space: normal; }
 
 /* 设置里那种彩色圆角方块图标 */
 .tile {
@@ -330,11 +332,12 @@ code { font: 500 12.5px var(--mono); letter-spacing: -0.2px; }
 /* ── 底部浮动按钮 ── */
 
 .dock { position: sticky; bottom: 0; z-index: 2; display: flex; gap: 10px; margin: 0 -14px; padding: 12px 14px 14px; }
-/* 内容滚到按钮后面时，后面那截先糊掉、再淡出 —— 按钮像浮在内容上 */
+/* 内容滚到按钮后面时：底下垫一层背景色、上沿淡出 —— 按钮后面不再透出半张卡片，看着乱 */
 .dock::before {
-  content: ""; position: absolute; inset: 0; z-index: -1;
+  content: ""; position: absolute; inset: -18px 0 0; z-index: -1;
+  background: linear-gradient(to top, var(--bg) 62%, color-mix(in srgb, var(--bg) 0%, transparent));
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
-  -webkit-mask: linear-gradient(to top, #000 55%, transparent); mask: linear-gradient(to top, #000 55%, transparent);
+  -webkit-mask: linear-gradient(to top, #000 70%, transparent); mask: linear-gradient(to top, #000 70%, transparent);
 }
 .pill-btn {
   flex: 1; height: 42px; border-radius: 21px; border: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
@@ -351,7 +354,7 @@ code { font: 500 12.5px var(--mono); letter-spacing: -0.2px; }
 
 .toast {
   position: fixed; left: 50%; bottom: 72px; z-index: 3; max-width: 330px; padding: 10px 16px; border-radius: 20px;
-  font-size: 12.5px; font-weight: 500; color: var(--label); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 12.5px; font-weight: 500; color: var(--label); text-align: center; width: max-content;
   background: var(--toast); -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22), inset 0 0 0 0.5px var(--sep);
   opacity: 0; transform: translate(-50%, 14px) scale(0.94); pointer-events: none;

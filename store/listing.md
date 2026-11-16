@@ -10,10 +10,10 @@ Everything below is meant to be copy-pasted as-is. `<…>` marks the few values 
 DSH Bridge
 ```
 
-**Summary** (132 chars max — the line below is 131). The dashboard shows this as "Summary from package": `./bridge store-pack` writes it into the zip's manifest `description`, so there is nothing to paste.
+**Summary** (132 chars max). The dashboard shows this as "Summary from package": it comes from the extension's own `plugin/vendor/extension/_locales/<lang>/messages.json` (`extDescription`), so there is nothing to paste. Edit it there.
 
 ```
-Drive the Chrome you already use from a local DSH agent: real clicks and typing over native messaging. No ports, no Connect button.
+Lets DSH work in the Chrome you already use: real clicks and typing, a cursor you can see, and your own logins.
 ```
 
 **Description**
@@ -50,7 +50,7 @@ Source code, issues and the helper: https://github.com/OrderG-X/dsh-chrome-bridg
 Developer Tools
 ```
 
-**Language** — English is the default. The package ships `_locales/en` and `_locales/zh_CN`, so the dashboard also offers 中文（简体）: paste the zh_CN copy below there.
+**Language** — English is the default. The package ships `_locales/en`, `zh_CN`, `zh_TW` and `ru`, so the dashboard also offers those languages: paste the zh_CN copy below into 中文（简体）. The popup itself follows Chrome's UI language (Chinese, Russian, otherwise English).
 
 **Homepage URL**
 
@@ -74,10 +74,10 @@ https://github.com/OrderG-X/dsh-chrome-bridge/blob/main/PRIVACY.md
 
 在「商品详情」顶部的语言下拉里选 **中文（简体）**，把下面两段贴进去（名称、类别、网址都跟英文一样，不用再填）。
 
-**Summary (zh_CN)**（132 字以内；`./bridge store-pack` 会写进包里的 `_locales/zh_CN`，后台显示为「软件包中的摘要」，不用贴）
+**Summary (zh_CN)**（132 字以内；就是扩展里 `_locales/zh_CN/messages.json` 那句，后台显示为「软件包中的摘要」，不用贴）
 
 ```
-用本机的 DSH 智能体操作你正在用的 Chrome：走 native messaging 发送真实点击和输入，不开端口，也不用点 Connect。
+让 DSH 直接操作你正在用的 Chrome：真点击、真输入，页面里看得到它的光标，你的登录状态都在。
 ```
 
 **Description (zh_CN)**

@@ -15,17 +15,18 @@
     <div class="app-icon"><img src="icons/icon128.png" alt=""></div>
     <div class="brand">
       <div class="name">DSH Bridge</div>
-      <div class="tagline">让 DSH 用你的 Chrome 干活</div>
+      <div class="tagline" data-i18n="tagline">让 DSH 用你的 Chrome 干活</div>
     </div>
     <span class="ver" id="ver"></span>
   </header>
 
-  <!-- 状态卡：骨架固定，只改文字和 class —— 每秒整块重画会让呼吸灯、流动线的动画一直从头播 -->
+  <!-- 文字都在 popup.js 的 I18N 里按 Chrome 的界面语言换；这里的中文只是兜底。
+       状态卡：骨架固定，只改文字和 class —— 每秒整块重画会让呼吸灯、流动线的动画一直从头播 -->
   <section id="status" class="card hero loading" aria-live="polite">
     <div class="hero-row">
       <span class="orb" id="orb"></span>
-      <div class="hero-title"><span id="stTitle">正在检查…</span><small id="stSub"></small></div>
-      <button class="icon-btn glassy" type="button" data-act="reconnect" title="重新连接本地宿主" aria-label="重新连接">
+      <div class="hero-title"><span id="stTitle" data-i18n="checking">正在检查…</span><small id="stSub"></small></div>
+      <button class="icon-btn glassy" type="button" data-act="reconnect" data-i18n-title="reconnect" title="重新连接" aria-label="重新连接">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13.2 8a5.2 5.2 0 1 1-1.5-3.7"/><path d="M13.2 2.6v3h-3"/></svg>
       </button>
     </div>
@@ -38,7 +39,7 @@
       <div class="wire" id="w1"></div>
       <div class="node" id="nHost">
         <div class="ring"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="2.5" y="3" width="11" height="7.5" rx="1.6"/><path d="M6 13h4M8 10.5V13"/></svg></div>
-        <b>本地宿主</b><small></small>
+        <b data-i18n="nodeHost">本机程序</b><small></small>
       </div>
       <div class="wire" id="w2"></div>
       <div class="node" id="nDsh">
@@ -52,29 +53,28 @@
     <div class="card list" id="settings">
       <label class="row toggle">
         <span class="tile green" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M8 2.2v5.2"/><path d="M4.6 4.4a5 5 0 1 0 6.8 0"/></svg></span>
-        <span class="row-main"><span class="row-title">允许 DSH 控制浏览器</span></span>
+        <span class="row-main"><span class="row-title" data-i18n="pause">允许 DSH 控制浏览器</span><span class="row-hint" data-i18n="pauseHint">关掉后，DSH 碰不了浏览器</span></span>
         <input type="checkbox" role="switch" data-act="pause" checked>
         <span class="switch" aria-hidden="true"></span>
       </label>
       <label class="row toggle">
         <span class="tile blue" aria-hidden="true"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M5 3.4v15.4c0 .75.9 1.12 1.42.58l3.6-3.76 2.9 5.94c.24.48.82.68 1.3.45l1.9-.92c.48-.23.68-.8.45-1.28l-2.88-5.9 5.2-.18c.77-.03 1.13-.97.56-1.5L6.64 2.7C6.08 2.18 5 2.6 5 3.4z"/></svg></span>
-        <span class="row-main"><span class="row-title">页面里显示 DSH 光标</span></span>
+        <span class="row-main"><span class="row-title" data-i18n="cursor">页面里显示 DSH 光标</span><span class="row-hint" data-i18n="cursorHint">只管显示，关掉也照常操作</span></span>
         <input type="checkbox" role="switch" data-act="cursor" checked>
         <span class="switch" aria-hidden="true"></span>
       </label>
       <label class="row toggle">
         <span class="tile orange" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><rect x="1.8" y="4.6" width="9.6" height="8.6" rx="1.6"/><path d="M4.6 4.6V3.4c0-.9.7-1.6 1.6-1.6h6.4c.9 0 1.6.7 1.6 1.6v5.6c0 .9-.7 1.6-1.6 1.6h-1.2"/></svg></span>
-        <span class="row-main"><span class="row-title">新页开在单独窗口</span></span>
+        <span class="row-main"><span class="row-title" data-i18n="window">新页开在单独窗口</span><span class="row-hint" data-i18n="windowHint">关掉就开在你当前窗口的后台</span></span>
         <input type="checkbox" role="switch" data-act="window" checked>
         <span class="switch" aria-hidden="true"></span>
       </label>
     </div>
-    <p class="note">关掉「控制」后，DSH 的浏览器调用会被直接拒绝。关掉「光标」只是不画，操作照做。关掉「单独窗口」，新页就开在你当前窗口的后台。</p>
   </section>
 
   <section class="block">
     <div class="block-head">
-      <h2>活跃会话</h2>
+      <h2 data-i18n="sessions">正在用浏览器的对话</h2>
       <span class="count" id="sessCount">0</span>
     </div>
     <div id="sessions"></div>
@@ -82,8 +82,8 @@
 
   <section class="block">
     <div class="block-head">
-      <h2>最近动作</h2>
-      <button class="link" id="moreAct" type="button" hidden>全部</button>
+      <h2 data-i18n="activity">最近操作</h2>
+      <button class="link" id="moreAct" type="button" hidden></button>
     </div>
     <ol id="activity" class="card list activity"></ol>
   </section>
@@ -91,11 +91,11 @@
   <footer class="dock">
     <button id="releaseAll" class="pill-btn danger" type="button" data-act="releaseAll" disabled>
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M5.9 5.9l4.2 4.2M10.1 5.9l-4.2 4.2"/></svg>
-      全部松手
+      <span data-i18n="releaseAll">全部放开</span>
     </button>
     <button id="copyDiag" class="pill-btn" type="button" data-act="diagnostics">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8.5" rx="2"/><path d="M10.5 5.5V4a2 2 0 0 0-2-2H4.5a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h1"/></svg>
-      复制诊断信息
+      <span data-i18n="copyReport">复制问题报告</span>
     </button>
   </footer>
 

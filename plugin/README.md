@@ -1,29 +1,32 @@
-# DSH Bridge · dsh-chrome-bridge
+# Chrome 浏览器控制
 
-A DeepSeek Harness (DSH) plugin that drives the Chrome you already use: real clicks and typing, a visible on-page cursor, and your own logins. It provides 12 `browser_*` tools over native messaging and the Chrome debugger, with no listening port.
+让 DSH 直接操作你正在用的 Chrome：真点击、真输入，页面里看得到它的光标，你的登录状态都在。
 
-让 DSH 直接操作你正在用的 Chrome：真点击、真输入，页面里看得到光标，登录状态都在。提供 12 个 `browser_*` 工具，走 native messaging 和 Chrome 调试接口，不开监听端口。
+- 它新开的页放进一个单独的窗口，不往你正在用的窗口里塞，也不抢焦点。
+- 它不会擅自去动你正在看的那一页。
+- 随时能暂停：点 Chrome 工具栏上的 DSH Bridge 图标，关掉「允许 DSH 控制浏览器」。
 
-Pages the agent opens go into a separate background window of your Chrome, so your own window keeps its tabs and focus.
-agent 新开的页放进你 Chrome 里一个单独的后台窗口，你自己的窗口不多标签页、焦点不动。
+## 怎么装
 
-## Install / 安装
+1. 在 DSH「插件」页点「添加插件」，填 `dsh-chrome-bridge`，然后重启 DSH。
+2. 从 [Chrome 应用商店](https://chromewebstore.google.com/detail/bippcbbbipppmhjkjomgdnjbooecbimo) 装上 DSH Bridge 扩展。
 
-1. In DSH, open **Plugins**, click **Add plugin**, enter `dsh-chrome-bridge`, then restart DSH.
-   在 DSH「插件」页点「添加插件」，填 `dsh-chrome-bridge`，重启 DSH。DSH 连不上 npm 时会自动换国内镜像。
-2. Add the DSH Bridge extension to Chrome from the [Chrome Web Store](https://chromewebstore.google.com/detail/bippcbbbipppmhjkjomgdnjbooecbimo).
-   从 [Chrome 应用商店](https://chromewebstore.google.com/detail/bippcbbbipppmhjkjomgdnjbooecbimo) 装上 DSH Bridge 扩展。
+装好后，插件页上它会显示「已连接」。
 
-Requirements: macOS, Windows or Linux, Chrome 116+, Node.js 18+.
-系统要求：macOS、Windows 或 Linux，Chrome 116+，Node.js 18+。
+## 怎么更新
 
-## Updating / 更新
+在「插件」页点开它，点「更新到 …」。新版发布后大约一天才装得到。
 
-On DSH 0.2.2 or later, open the plugin on the Plugins page and click "Update to …". On older DSH, uninstall it and add it again. A new version can be installed about a day after it is released, because the pnpm that DSH uses skips brand-new versions by default.
+## 语言
 
-DSH 0.2.2 起，在「插件」页点开它，点「更新到 …」；更老的 DSH 先卸载，再添加一次。DSH 用 pnpm 安装插件，而 pnpm 默认不装刚发布的版本，所以新版大约发布一天后才装得到。
+- Chrome 里的扩展面板跟着 Chrome 的语言走：中文、英文、俄文。
+- 插件页上的这张设置卡片跟着 DSH 的语言走。
+- 想让模型看到的工具说明也换成英文或俄文，看[完整说明](https://github.com/OrderG-X/dsh-chrome-bridge/blob/main/README.zh.md)里「工具描述支持英文 / 俄文」那一节。
 
-Tool descriptions can be English or Russian: set `config.locale: en` (or `ru`) on the bundle in the profile's `cordis.patch.yml` and restart DSH.
-工具描述可以是英文或俄文：在 profile 的 `cordis.patch.yml` 里给这个 bundle 加 `config.locale: en`（或 `ru`），然后重启 DSH。
+## 系统要求
 
-Full documentation / 完整说明：https://github.com/OrderG-X/dsh-chrome-bridge
+macOS、Windows 或 Linux，Chrome 116 或更新。
+
+完整说明：https://github.com/OrderG-X/dsh-chrome-bridge
+
+English: https://github.com/OrderG-X/dsh-chrome-bridge/blob/main/plugin/README.en.md
