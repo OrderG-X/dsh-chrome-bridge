@@ -23,4 +23,7 @@ On DSH 0.2.2 or later, open the plugin on the Plugins page and click "Update to 
 
 DSH 0.2.2 起，在「插件」页点开它，点「更新到 …」；更老的 DSH 先卸载，再添加一次。DSH 用 pnpm 安装插件，而 pnpm 默认不装刚发布的版本，所以新版大约发布一天后才装得到。
 
+Tool descriptions can be English or Russian: set `config.locale: en` (or `ru`) on the bundle in the profile's `cordis.patch.yml` and restart DSH.
+工具描述可以是英文或俄文：在 profile 的 `cordis.patch.yml` 里给这个 bundle 加 `config.locale: en`（或 `ru`），然后重启 DSH。
+
 Full documentation / 完整说明：https://github.com/OrderG-X/dsh-chrome-bridge

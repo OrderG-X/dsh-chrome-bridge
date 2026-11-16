@@ -1,0 +1,157 @@
+/**
+ * Server-side dictionary (English). Same keys as zh.js, which stays the reference
+ * dictionary: a key missing here falls back to Chinese, and so does a translation
+ * that drops a placeholder the Chinese text needs (see i18n/index.js).
+ *
+ * This layer is model-facing: tool descriptions, parameter docs and error messages.
+ * Keep the operational detail — the model reads these as instructions.
+ */
+export default {
+  // ── shared ──────────────────────────────────────────────────────────────
+  'param.tab': 'Tab id (number), or "active" for the tab the user is currently looking at. When omitted, the tab this session opened or last acted on is reused; with none, the call fails — it never falls back to the tab the user is on',
+  'param.ref': 'Element ref: the [N] numbers listed by browser_read(what=snapshot). Most reliable — with a ref there is no need to guess a selector',
+
+  // ── browser_tabs ───────────────────────────────────────────────────────
+  'tool.tabs.desc': 'List / find / open / close / switch Chrome tabs. Every other browser_* tool takes a tab argument, so call this first to get an id. It drives the user\'s real Chrome (logins intact) and never spins up a clean browser. Pages opened with open go into a separate "DSH work window" in the background without stealing focus, so the page the user is looking at is left alone.',
+  'tool.tabs.action': 'list all; find filters by title/URL; open opens a new tab (background work window by default); close closes it; activate brings it to the front (that pulls the window in front of the user, so only when asked)',
+  'tool.tabs.query': 'Keyword for action=find (matches title or URL)',
+  'tool.tabs.url': 'URL to open when action=open',
+  'tool.tabs.tab': 'Tab id for action=close/activate',
+
+  // ── browser_read ───────────────────────────────────────────────────────
+  'tool.read.desc': 'Read page content. what=snapshot lists the elements you can click/fill, each with a [N] ref — call it first when you are about to act, then pass ref=N straight to browser_click / browser_input; that beats guessing selectors (elements inside same-origin iframes are listed too and can be used by ref); text returns the visible text (best for scraping content); html returns the outer HTML; attr returns one attribute; info returns title/URL/viewport and tells you whether a dialog is blocking the page (if so, call browser_dialog first).',
+  'tool.read.what': 'What to read',
+  'tool.read.selector': 'CSS selector; for snapshot/text/html it defaults to the whole page',
+  'tool.read.name': 'Attribute to read when what=attr, e.g. href',
+  'tool.read.limit': 'Maximum characters to return; default 6000 (8000 for snapshot)',
+
+  // ── browser_click ──────────────────────────────────────────────────────
+  'tool.click.desc': 'Click something on the page. Most reliable is ref (the number browser_read what=snapshot gave you); next selector or text (find by visible text); failing that, fall back to x/y coordinates. It sends real mouse events (can trigger new windows, dialogs, focus), not synthetic JS clicks. A small cursor appears on the user\'s screen while clicking.',
+  'tool.click.selector': 'CSS selector',
+  'tool.click.text': 'Find the element by its visible text and click it (survives redesigns better than a selector)',
+  'tool.click.x': 'Viewport X coordinate (with y)',
+  'tool.click.y': 'Viewport Y coordinate (with x)',
+  'tool.click.count': 'Number of clicks; default 1 (2 = double click)',
+
+  // ── browser_input ──────────────────────────────────────────────────────
+  'tool.input.desc': 'Type into the page: type enters text (focusing selector first if given), key presses keys (combos like meta+a work), select picks a dropdown option, upload attaches files, focus focuses, hover hovers, scroll scrolls.',
+  'tool.input.action': 'Input action to perform',
+  'tool.input.text': 'Text to enter when action=type',
+  'tool.input.ref': '%ref; can replace selector',
+  'tool.input.selector': 'CSS selector (for type it is clicked first to focus; select/upload/focus/hover need it or ref)',
+  'tool.input.key': 'Key for action=key, e.g. Enter / Escape / "meta+a" / "ctrl+shift+k"',
+  'tool.input.value': 'Value or option label to pick when action=select',
+  'tool.input.files': 'Absolute local file paths for action=upload (only regular, non-hidden files under the session working directory or the system temp directory)',
+  'tool.input.dy': 'Vertical scroll amount for action=scroll; default 600 (positive scrolls down)',
+  'tool.input.dx': 'Horizontal scroll amount for action=scroll; default 0',
+  'tool.input.x': 'Viewport X for action=hover when no selector is given',
+  'tool.input.y': 'Viewport Y for action=hover when no selector is given',
+
+  // ── browser_nav ────────────────────────────────────────────────────────
+  'tool.nav.desc': 'Go to a URL (action=go, the default), or go back, forward or reload. All of them wait for the page to finish loading.',
+  'tool.nav.action': 'go navigates to url (default); back / forward / reload need no url',
+  'tool.nav.url': 'Target URL when action=go',
+
+  // ── browser_screenshot ─────────────────────────────────────────────────
+  'tool.screenshot.desc': 'Screenshot the page; the image is handed straight to you. mode=viewport captures the visible viewport, full the whole page, element a single element (needs ref or selector). The in-page cursor is captured too, so you see the same picture the user does.',
+  'tool.screenshot.mode': 'How much to capture',
+  'tool.screenshot.ref': 'Element to capture when mode=element: %ref',
+  'tool.screenshot.selector': 'Element to capture when mode=element (CSS selector)',
+  'tool.screenshot.format': 'png (default) or jpeg',
+
+  // ── browser_eval ───────────────────────────────────────────────────────
+  'tool.eval.desc': 'Run a snippet of JS in the page and get the return value back. Good for state that selectors cannot reach, inspecting the DOM, and triggering the page\'s own functions. The return value is JSON-serialized. Note: it runs in page context — do not use it to click (use browser_click).',
+  'tool.eval.expression': 'JS expression to run; wrap multiple statements in an IIFE and return',
+
+  // ── browser_wait ───────────────────────────────────────────────────────
+  'tool.wait.desc': 'Wait until the page reaches a state, then continue — more reliable than sleep. Pick exactly one of: selector waits for the element to appear (and be visible), text waits for a piece of text to show up, url waits for the URL to contain a substring (handy after a redirect or login). gone=true waits for it to disappear instead (a spinner, say).',
+  'tool.wait.selector': 'CSS selector',
+  'tool.wait.text': 'Text that must appear in the page\'s visible text',
+  'tool.wait.url': 'Substring the URL must contain',
+  'tool.wait.gone': 'true = wait for it to disappear; default false',
+  'tool.wait.timeoutMs': 'Timeout in milliseconds; default 15000, max %max',
+
+  // ── browser_dialog ─────────────────────────────────────────────────────
+  'tool.dialog.desc': 'Handle alert / confirm / prompt dialogs. A blocking dialog freezes every later action on the page, so when browser_read(what=info) reports one, call this first.',
+  'tool.dialog.action': 'accept confirms, dismiss cancels',
+  'tool.dialog.text': 'Text to enter into a prompt dialog',
+
+  // ── browser_drag ───────────────────────────────────────────────────────
+  'tool.drag.desc': 'Drag something to another place: sortable lists, kanban cards, sliders, dropping files into a box, canvases and so on. Give the start and the end each as a ref (snapshot number), selector, text (visible text) or x/y coordinates; drop zones ("drop here" boxes) usually have no ref, so toText is the easiest way to find them. Both HTML5 draggable drag-and-drop and mouse-driven components are handled; screenshot or read the page afterwards to confirm the result.',
+  'tool.drag.fromRef': 'Start: %ref',
+  'tool.drag.fromSelector': 'Start: CSS selector',
+  'tool.drag.fromText': 'Start: find the element by visible text',
+  'tool.drag.fromX': 'Start: viewport X (with fromY)',
+  'tool.drag.fromY': 'Start: viewport Y',
+  'tool.drag.toRef': 'End: element ref',
+  'tool.drag.toSelector': 'End: CSS selector',
+  'tool.drag.toText': 'End: find the element by visible text (best for drop zones)',
+  'tool.drag.toX': 'End: viewport X (with toY)',
+  'tool.drag.toY': 'End: viewport Y',
+  'tool.drag.steps': 'How many mouse steps the drag takes; default 12 (raise it for finer slider control)',
+
+  // ── browser_download ───────────────────────────────────────────────────
+  'tool.download.desc': 'Download the file a link points to (invoice, report, PDF, image …) onto this machine, with the user\'s Chrome logins. Give one of ref (a link\'s snapshot number), selector or url; relative addresses resolve against the page, and blob: / data: links work too. Saved into the "Downloads" folder by default, or into the session working directory with to=workdir; existing files are not overwritten — (1) is appended. If the download control is not a link (the file only exists after a click): click it with browser_click, then find the file URL with browser_devtools action=network and pass that here.',
+  'tool.download.selector': 'CSS selector (pointing at an element with an address: a / img / video / source …)',
+  'tool.download.url': 'URL to download; a relative address is fine',
+  'tool.download.filename': 'File name to save as; defaults to the server-provided name or the name in the URL',
+  'tool.download.to': 'downloads (default) saves into the "Downloads" folder; workdir saves into the session working directory',
+
+  // ── browser_devtools ───────────────────────────────────────────────────
+  'tool.devtools.desc': 'Inspect a page the way devtools does: console shows console output and JS errors; network shows network requests (status, timing); response shows the body a particular request returned (JSON from an API, say); clear wipes this tab\'s records. When a page "does nothing when clicked", "shows no data" or "is blank", look here first.',
+  'tool.devtools.action': 'What to inspect',
+  'tool.devtools.level': 'action=console: error shows errors only, warning shows errors+warnings, default all',
+  'tool.devtools.filter': 'console/network: keep only entries containing this text (URL, method or content counts)',
+  'tool.devtools.reload': 'action=network: reload the page first to capture every request of the load (only requests after the debugger attached are recorded)',
+  'tool.devtools.request': 'action=response: the number after # in the network list',
+  'tool.devtools.limit': 'console/network: how many entries (default 40); response: how many characters (default 6000)',
+
+  // ── errors ─────────────────────────────────────────────────────────────
+  'err.dirNotOwned': '%dir is not a directory that belongs only to the current user; refusing to use it',
+  'err.bridgeDown': 'The browser bridge is not running (cannot find %sock): Chrome is not open, or the extension is not loaded.\n%hint',
+  'err.badJson': 'The host returned bad JSON',
+  'err.unknownHostError': 'Unknown error',
+  'err.connect': 'Cannot reach the browser bridge: %message\n%hint',
+  'err.closed': 'The browser bridge connection was closed',
+  'err.timeout': 'Timed out waiting for the browser bridge (%ms)',
+  'err.noActiveTab': 'No active tab',
+  'err.badTab': 'tab must be a tab id (number) or "active"; got "%tab"',
+  'err.noTab': 'No tab given (tab). Use browser_tabs to open (open) or find (list / find) the page you want first, then pass its id as tab; to act on the page the user is looking at, pass tab="active" explicitly. Without tab only the tab you opened or named yourself is reused — the page the user is on is never touched',
+  'err.uploadAbs': 'upload needs absolute paths; got: %path',
+  'err.uploadMissing': 'File not found: %path',
+  'err.uploadHidden': 'Cannot upload a hidden directory / hidden file: %path',
+  'err.uploadOutsideCwd': 'Only files under the session working directory (%cwd) or the system temp directory can be uploaded: %path',
+  'err.uploadOutside': 'Only files under the session working directory or the system temp directory can be uploaded: %path',
+  'err.uploadNotFile': 'Not a regular file: %path',
+  'err.openNeedsUrl': 'action=open needs a url',
+  'err.unknownAction': 'Unknown action: %action',
+  'err.attrNeeds': 'what=attr needs selector and name',
+  'err.unknownWhat': 'Unknown what: %what',
+  'err.clickNeeds': 'Give one of ref, selector, text or x+y',
+  'err.shadowUnsupported': 'Ref %ref is inside the shadow DOM or an iframe, where %action does not support refs yet — use browser_eval instead',
+  'err.typeNeedsText': 'action=type needs text',
+  'err.keyNeedsKey': 'action=key needs key',
+  'err.selectNeedsTarget': 'action=select needs ref or selector',
+  'err.selectNeedsValue': 'action=select needs value',
+  'err.uploadNeedsTarget': 'action=upload needs ref or selector',
+  'err.uploadNeedsFiles': 'action=upload needs files',
+  'err.focusNeedsTarget': 'action=focus needs ref or selector',
+  'err.hoverNeedsTarget': 'action=hover needs ref or selector, or x/y coordinates',
+  'err.navNeedsUrl': 'action=go needs a url',
+  'err.shotNeedsTarget': 'mode=element needs ref or selector',
+  'err.shotZeroSize': 'That element has no size (it may be hidden), so it cannot be captured',
+  'err.waitNeedsOne': 'Give exactly one of selector / text / url',
+  'err.dragNeedsEnd': '%which needs one of %ref, %sel, %txt or %xy',
+  'err.noWorkdir': 'Cannot determine the session working directory; drop to=workdir to save into the "Downloads" folder',
+  'which.start': 'The start',
+  'which.end': 'The end',
+
+  // ── setup hints appended to errors ─────────────────────────────────────
+  'hint.extOpened': 'I opened chrome://extensions for you (background tab)%store',
+  'hint.extOpenedStore': '; check that DSH Bridge is enabled there',
+  'hint.copied': 'The extension folder path is already on the clipboard (%how)',
+  'hint.copiedMac': 'in the file picker press ⌘⇧G, then ⌘V',
+  'hint.copiedWin': 'paste it into the file picker\'s address bar and press Enter',
+  'hint.notes': '\n(%notes)',
+  'hint.notesSep': '; ',
+}

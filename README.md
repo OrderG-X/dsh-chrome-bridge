@@ -131,6 +131,19 @@ Until step 2 is done the `browser_*` tools fail **loudly with exactly these step
 > `dsh plugin add` from the CLI refuses the app-managed profile — use the sidebar there.
 > Updating: on DSH 0.2.2 or later, open the bundle on the Plugins page and click "Update to …"; on older DSH, uninstall and install again. A new version can be installed about a day after release, because the pnpm that DSH uses skips brand-new versions by default; to get it right away, use the release tarball (a tarball install can't use Update later).
 
+### 🌍 Tool descriptions in English or Russian
+
+What the model reads for the `browser_*` tools — descriptions, parameter docs, and every error those tools raise — is Chinese by default. Point `config.locale` at `en` or `ru` and DSH hands the model English / Russian text instead; tool names, arguments and results stay exactly the same:
+
+```yaml
+# the profile's patch layer, e.g. ~/.dsh/profiles/<profile>/cordis.patch.yml
+- id: chrome-bridge
+  config:
+    locale: en      # en | ru | zh (default)
+```
+
+Restart DSH after changing it — the descriptions are part of the context a session gets when it starts. A translation that misses a key, or drops a `%placeholder` the Chinese text needs, falls back to Chinese for that one string, so nothing ever comes out half-empty or with a missing detail. Not translated yet: tool results, the settings card, the popup and the native host messages — that is a separate change.
+
 ### 👀 What you see while it works
 
 - **Click the toolbar icon** for a live panel: whether Chrome ↔ local host ↔ DSH are connected, **which DSH sessions are driving which tabs** (jump to a tab, or release it with one click), the last actions with their errors, a **pause switch** that makes the browser off-limits until you turn it back on, and *copy diagnostics* for bug reports. The icon badge shows how many tabs are under control (`!` = host down, `⏸` = paused).
