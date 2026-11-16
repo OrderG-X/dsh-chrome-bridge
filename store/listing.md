@@ -19,29 +19,26 @@ Lets DSH work in the Chrome you already use: real clicks and typing, a cursor yo
 **Description**
 
 ```
-DSH Bridge gives a locally running DSH (DeepSeek Harness) agent hands inside the Chrome you already use — your logins, your tabs, your session.
+DSH Bridge lets DSH (DeepSeek Harness), the AI agent running on your computer, work in the Chrome you already use — with your logins and your tabs.
 
-Nothing opens a port and nothing asks you to press Connect: the extension talks to a small helper process on your computer over Chrome's native messaging pipe, and moves the mouse and keyboard through real Chrome DevTools Protocol input events.
+What it does:
+• Real clicks and typing — clicks, typing, keys, scrolling, drag and drop and file pickers go through Chrome's own input system (the DevTools Protocol), so pages react just as they do to you.
+• Sees the page — screenshots of the visible area, the whole page or a single element.
+• A cursor you can watch — every action shows an on-page cursor with a small label saying what it is about to do. It shows up in screenshots too.
+• A simple panel — click the toolbar icon to see whether everything is connected, which tabs DSH is working in and what it did recently. One switch stops all control; "Release all" lets go of every tab.
+• Stays out of your way — pages DSH opens go into a separate background window of your Chrome (same logins), so your own window keeps its tabs and its focus. You can turn this off in the panel.
+• Easy to stop — while DSH works in a tab, Chrome shows its "is debugging this browser" bar; press Cancel and DSH lets go at once.
+• Your language — the panel follows Chrome's language: English, Chinese or Russian.
 
-What you get:
-• Real input — clicks, typing, keys, scrolling, drags and file pickers are dispatched as trusted CDP events, not synthetic DOM hacks.
-• Real screenshots — the agent sees the rendered page, including full-page and single-element captures.
-• A visible cursor — every action draws an on-page cursor (with a small label saying what it is about to do) that also shows up in screenshots, so you can watch what the agent is doing.
-• A control panel — the toolbar popup shows the connection status, which tabs each agent session is holding, a live log of recent actions, a switch to pause all control, and a one-click "Release all".
-• Your session — you stay logged in; there is no separate automated browser and no cookie export.
-• Out of your way — pages the agent opens go into their own background window of your Chrome (same logins), so your window keeps its tabs and its focus. You can switch this off in the panel.
-• A permanent "DSH Bridge is debugging this browser" banner while attached — press Cancel on it and the bridge detaches instantly.
+What you need:
+• macOS, Windows or Linux, with Node.js 18 or newer.
+• DSH with the dsh-chrome-bridge plugin: on DSH's Plugins page, click "Add plugin" and enter dsh-chrome-bridge. The plugin sets up a small local helper program that this extension talks to.
+Without that helper the extension does nothing, and its panel tells you what is missing.
 
-Requirements (important):
-• macOS, Windows or Linux, with Node.js 18+.
-• DSH installed, with the matching dsh-chrome-bridge plugin (it installs the helper and registers this extension for native messaging).
-• The helper is a local Node process. Install it from https://github.com/OrderG-X/dsh-chrome-bridge — the plugin does it automatically on first load.
-Without the helper the extension is inert: it has nothing to talk to, and it will tell you so.
+Privacy: the extension has no server and no analytics, makes no outside requests of its own and opens no network port. It reads a page only when DSH on your computer asks, and passes it to DSH over a local channel only your user account can use (a private Unix socket on macOS and Linux; on Windows a named pipe that needs a token kept in your own user folder). What DSH does next — including sending anything to the AI model provider you chose in DSH — is up to DSH and your settings.
 
-Privacy: the extension has no server, no analytics and no outbound requests of its own. Page content is read on your machine only while your local agent asks for it, and is handed to that agent over a local channel only your user account can use (a 0600 Unix socket on macOS and Linux; on Windows a named pipe that needs a token kept in your own user folder). What your agent then does with it — including anything sent to the model provider you configured in DSH — is governed by DSH and your own settings.
-
-Full privacy policy: https://github.com/OrderG-X/dsh-chrome-bridge/blob/main/PRIVACY.md
-Source code, issues and the helper: https://github.com/OrderG-X/dsh-chrome-bridge
+Privacy policy: https://github.com/OrderG-X/dsh-chrome-bridge/blob/main/PRIVACY.md
+Source code and issues: https://github.com/OrderG-X/dsh-chrome-bridge
 ```
 
 **Category**
@@ -50,7 +47,7 @@ Source code, issues and the helper: https://github.com/OrderG-X/dsh-chrome-bridg
 Developer Tools
 ```
 
-**Language** — English is the default. The package ships `_locales/en`, `zh_CN`, `zh_TW` and `ru`, so the dashboard also offers those languages: paste the zh_CN copy below into 中文（简体）. The popup itself follows Chrome's UI language (Chinese, Russian, otherwise English).
+**Language** — English is the default. The package ships `_locales/en`, `zh_CN`, `zh_TW` and `ru`, so the dashboard also offers those languages: paste the zh_CN copy below into 中文（简体） and the ru copy into Русский (中文（繁體）can stay empty — it falls back to English). The popup itself follows Chrome's UI language (Chinese, Russian, otherwise English).
 
 **Homepage URL**
 
@@ -83,29 +80,55 @@ https://github.com/OrderG-X/dsh-chrome-bridge/blob/main/PRIVACY.md
 **Description (zh_CN)**
 
 ```
-DSH Bridge 让本机运行的 DSH（DeepSeek Harness）智能体直接操作你正在用的 Chrome —— 用你的登录状态、你的标签页、你的会话。
+DSH Bridge 让你电脑上的 DSH（DeepSeek Harness）智能体直接操作你正在用的 Chrome——用你的登录状态、你的标签页。
 
-不开任何端口，也不用点 Connect：扩展通过 Chrome 的 native messaging 管道和你电脑上的一个小助手进程通信，再用真实的 Chrome DevTools Protocol 输入事件来移动鼠标、敲键盘。
+能做什么：
+• 真点击、真输入——点击、打字、按键、滚动、拖拽、选文件，都走 Chrome 自己的输入通道（开发者工具协议），网页的反应和你亲手操作一样。
+• 看得见页面——能截可见区域、整页或单个元素。
+• 看得见它在干什么——每一步都会在页面上显示一个光标，旁边写着它要做什么，截图里也看得到。
+• 简单的面板——点工具栏图标，就能看到连没连上、DSH 正在操作哪些标签页、最近做了什么。一个开关停掉所有控制，「全部放开」一键放开所有标签页。
+• 不打扰你——DSH 新开的页放进你 Chrome 里一个单独的后台窗口（登录状态一样），你自己的窗口不多标签页、不抢焦点。不想要可以在面板里关掉。
+• 随时能叫停——DSH 操作期间，Chrome 会一直显示「正在调试此浏览器」的提示条，点「取消」它立刻放手。
+• 跟着你的语言——面板跟随 Chrome 的语言：中文、英文、俄文。
 
-你会得到：
-• 真实输入 —— 点击、输入、按键、滚动、拖拽、选文件，都以可信的 CDP 事件发出，不是模拟的 DOM 小把戏。
-• 真实截图 —— 智能体看到的是渲染后的页面，支持整页截图和单个元素截图。
-• 看得见的光标 —— 每个操作都会在页面上画一个光标（带一个小标签，写着它要做什么），截图里也看得到，你能清楚看到智能体在干嘛。
-• 控制面板 —— 点工具栏图标能看到连接状态、每个智能体会话正在控制哪些标签页、最近操作的实时日志，还有一键暂停全部控制和「全部松手」。
-• 你的会话 —— 你一直保持登录；没有另开一个自动化浏览器，也不导出 Cookie。
-• 不打扰你 —— 智能体新开的页放进你 Chrome 里一个单独的后台窗口（登录状态一样），你自己的窗口不多标签页、焦点不动。不想要可以在面板里关掉。
-• 接管期间 Chrome 会一直显示「DSH Bridge 正在调试此浏览器」的提示条 —— 点上面的「取消」，桥接立刻断开。
+需要什么：
+• macOS、Windows 或 Linux，装有 Node.js 18 或更新版本。
+• DSH 装上 dsh-chrome-bridge 插件：在 DSH「插件」页点「添加插件」，填 dsh-chrome-bridge。插件会装好一个本机程序，扩展就是和它对话。
+没有这个本机程序时，扩展什么也不做，面板会告诉你差哪一步。
 
-使用要求（重要）：
-• macOS、Windows 或 Linux，需要 Node.js 18+。
-• 已安装 DSH，并装好配套的 dsh-chrome-bridge 插件（它会装好助手，并为本扩展注册 native messaging）。
-• 助手是一个本地 Node 进程。来源：https://github.com/OrderG-X/dsh-chrome-bridge —— 插件首次加载时会自动装好。
-没有助手时扩展什么也不做：它没有可以对话的对象，并会明确告诉你。
-
-隐私：扩展没有服务器、没有统计，自己也不发任何外部请求。只有当本机的智能体请求时，页面内容才会在你的电脑上被读取，并通过只有你这个系统用户能用的本地通道交给这个智能体（macOS、Linux 上是权限 0600 的 Unix socket；Windows 上是命名管道，要凭存放在你自己用户目录里的令牌才能用）。智能体之后怎么用这些内容 —— 包括发给你在 DSH 里配置的模型服务商 —— 由 DSH 和你自己的设置决定。
+隐私：扩展没有服务器、没有统计，自己不发任何外部请求，也不开网络端口。只有你电脑上的 DSH 要求时，它才读取页面，并通过只有你这个系统用户能用的本地通道交给 DSH（macOS、Linux 上是私有的 Unix socket；Windows 上是要凭你用户目录里的令牌才能用的命名管道）。DSH 之后怎么用这些内容——包括发给你在 DSH 里选的模型服务商——由 DSH 和你的设置决定。
 
 完整隐私政策：https://github.com/OrderG-X/dsh-chrome-bridge/blob/main/PRIVACY.md
-源码、问题反馈和助手：https://github.com/OrderG-X/dsh-chrome-bridge
+源码和问题反馈：https://github.com/OrderG-X/dsh-chrome-bridge
+```
+
+## Русское описание (ru)
+
+在「商品详情」顶部的语言下拉里选 **Русский**，把下面这段贴进「说明」（摘要来自扩展里的 `_locales/ru/messages.json`，不用贴）。
+
+**Description (ru)**
+
+```
+DSH Bridge позволяет DSH (DeepSeek Harness) — ИИ-агенту, который работает на вашем компьютере, — действовать в вашем обычном Chrome: с вашими входами в аккаунты и вашими вкладками.
+
+Что умеет:
+• Настоящие клики и ввод — клики, набор текста, клавиши, прокрутка, перетаскивание и выбор файлов идут через собственный механизм ввода Chrome (DevTools Protocol), поэтому страница реагирует так же, как на ваши действия.
+• Видит страницу — снимки видимой области, всей страницы или отдельного элемента.
+• Видно, что он делает — при каждом действии на странице появляется курсор с подписью о том, что он собирается сделать. Его видно и на снимках.
+• Простая панель — нажмите значок на панели инструментов: видно, всё ли подключено, в каких вкладках работает DSH и что он делал недавно. Один переключатель останавливает всё управление, «Отпустить все» освобождает все вкладки.
+• Не мешает — страницы, которые открывает DSH, попадают в отдельное фоновое окно вашего Chrome (с теми же входами), а ваше окно сохраняет свои вкладки и фокус. Это можно отключить в панели.
+• Легко остановить — пока DSH работает во вкладке, Chrome показывает полосу «…отлаживает этот браузер»; нажмите «Отмена», и DSH сразу отпустит вкладку.
+• На вашем языке — панель следует языку Chrome: русский, английский или китайский.
+
+Что нужно:
+• macOS, Windows или Linux с Node.js 18 или новее.
+• DSH с плагином dsh-chrome-bridge: на странице «Плагины» (Plugins) в DSH нажмите «Добавить плагин» (Add plugin) и введите dsh-chrome-bridge. Плагин установит небольшую локальную программу, с которой и общается это расширение.
+Без этой программы расширение ничего не делает, а панель подскажет, чего не хватает.
+
+Конфиденциальность: у расширения нет сервера и аналитики, оно само не делает внешних запросов и не открывает сетевых портов. Страницу оно читает только по запросу DSH на вашем компьютере и передаёт её DSH по локальному каналу, доступному только вашей учётной записи (закрытый Unix-сокет в macOS и Linux; в Windows — именованный канал, для доступа к которому нужен токен из вашей папки пользователя). Что DSH делает дальше — в том числе отправляет ли что-то выбранному в DSH поставщику ИИ-модели, — зависит от DSH и ваших настроек.
+
+Политика конфиденциальности: https://github.com/OrderG-X/dsh-chrome-bridge/blob/main/PRIVACY.md
+Исходный код и вопросы: https://github.com/OrderG-X/dsh-chrome-bridge
 ```
 
 ## Privacy practices tab
@@ -157,21 +180,18 @@ The agent works on whatever page the user points it at, and the on-page cursor o
 
 ## Test instructions tab (for the reviewer)
 
-```
-This extension is the browser half of a local tool. It only talks to a native-messaging helper on the same computer, so on its own its toolbar panel shows "helper not connected" - that is expected. No account or login is needed.
+The dashboard box ("其他说明") takes **500 characters max**; this is the text that is in it now (2026-11-17):
 
-To test on macOS (needs Node.js 18+ and git):
-1. Install this extension from the store.
-2. In Terminal:
-   git clone https://github.com/OrderG-X/dsh-chrome-bridge
-   cd dsh-chrome-bridge && ./install.sh
-   (installs the helper and registers it for this extension's ID; ./install.sh --uninstall removes it)
-3. Open the extension's toolbar panel: the status turns green ("已连接" = connected); if not, press its reconnect button or restart Chrome.
-4. In Terminal, drive the browser the way the local agent does:
-   ~/.dsh/bin/cb tabs
-   ~/.dsh/bin/cb open https://example.com --front
-   ~/.dsh/bin/cb click-text active "Learn more"
-   You will see the on-page cursor move and click, the tab placed in a labelled tab group, and Chrome's debugging banner. The panel lists the controlled tab and the recent actions; "全部松手" (Release all) detaches everything.
+```
+Needs a local helper; without it the panel shows "not connected" (expected). No login needed.
+On macOS with Node.js 18+:
+git clone https://github.com/OrderG-X/dsh-chrome-bridge
+cd dsh-chrome-bridge && ./install.sh
+Open the toolbar panel: it turns green (press reconnect if not). Then:
+~/.dsh/bin/cb open https://example.com --front
+~/.dsh/bin/cb click-text active "Learn more"
+You will see the on-page cursor click, a tab group and the debug banner.
+More: see store/listing.md in the repo.
 ```
 
 ## After the item is created
