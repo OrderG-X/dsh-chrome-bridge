@@ -12,6 +12,7 @@
 
 import fs from 'node:fs'
 import { installState, assistInstall, paths, STORE_EXT_IDS } from './setup.js'
+import { tt } from './i18n/index.js'
 
 export const PANEL_ROUTE = '/dsh-chrome-bridge/panel'
 
@@ -76,10 +77,10 @@ function readJson(req, limit = 4096) {
     const chunks = []
     req.on('data', (c) => {
       size += c.length
-      if (size > limit) { reject(new Error('请求太大')); req.destroy() } else chunks.push(c)
+      if (size > limit) { reject(new Error(tt('err.panelTooLarge'))); req.destroy() } else chunks.push(c)
     })
     req.on('end', () => {
-      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')) } catch { reject(new Error('不是 JSON')) }
+      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')) } catch { reject(new Error(tt('err.panelNotJson'))) }
     })
     req.on('error', reject)
   })
@@ -126,7 +127,7 @@ export function panelHandler({ call, sock, origin, trace = () => {} }) {
           return send(200, { ...(await panelState(call, sock)), assist: { opened: !!r.opened, clipboard: !!r.clipboard, store: !!r.store } })
         }
         default:
-          return send(400, { error: `不认识的 action: ${body.action}` })
+          return send(400, { error: tt('err.unknownAction', { action: body.action }) })
       }
     } catch (e) {
       return send(200, { ...(await panelState(call, sock)), actionError: String((e && e.message) || e) })

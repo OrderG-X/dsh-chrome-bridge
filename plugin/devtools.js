@@ -6,6 +6,8 @@
  * 所以看 console 前先 attach 一下就能拿到「打开页面以来」的输出。网络请求没有补发，要 reload。
  */
 
+import { tt } from './i18n/index.js'
+
 const time = (ms) => new Date(ms).toTimeString().slice(0, 8)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const LEVELS = {
@@ -31,13 +33,15 @@ export async function consoleLog(call, tabId, { level = 'all', filter, limit = 4
   }
   const total = items.length
   items = items.slice(-limit)
-  if (!items.length) return level === 'all' && !filter ? '(控制台没有输出)' : '(没有匹配的条目)'
+  if (!items.length) return level === 'all' && !filter ? tt('res.devtools.consoleEmpty') : tt('res.devtools.consoleNoMatch')
   const lines = items.map((c) => {
-    const tag = c.kind === 'exception' ? '[未捕获] ' : c.kind && c.kind !== 'console' ? `[${c.kind}] ` : ''
+    const tag = c.kind === 'exception' ? tt('res.devtools.uncaught') : c.kind && c.kind !== 'console' ? `[${c.kind}] ` : ''
     const where = c.where ? `  (${shortWhere(c.where)})` : ''
     return `${time(c.at)} ${String(c.level).padEnd(7)} ${tag}${c.text}${where}`
   })
-  const head = total > items.length ? `最近 ${items.length} 条（共 ${total} 条）` : `${items.length} 条`
+  const head = total > items.length
+    ? tt('res.devtools.consoleHead', { shown: items.length, total })
+    : tt('res.devtools.consoleCount', { n: items.length })
   return `${head}\n${lines.join('\n')}`
 }
 
@@ -51,7 +55,7 @@ export async function networkLog(call, tabId, { filter, reload = false, limit = 
   const total = items.length
   items = items.slice(-limit)
   if (!items.length) {
-    return filter ? '(没有匹配的请求)' : '(还没记到请求——只记调试器接上之后的；传 reload=true 刷新一次就能抓到页面加载的全部请求)'
+    return filter ? tt('res.devtools.netEmptyFiltered') : tt('res.devtools.netEmpty')
   }
   const hasId = items.some((n) => n.id)
   const lines = items.map((n) => {
@@ -60,35 +64,42 @@ export async function networkLog(call, tabId, { filter, reload = false, limit = 
     const url = n.url.length > 150 ? n.url.slice(0, 149) + '…' : n.url
     return `${hasId ? `#${n.id} ` : ''}${n.method} ${status} ${String(n.type || '').toLowerCase()} ${ms} ${url}`
   })
-  const head = (total > items.length ? `最近 ${items.length} 个请求（共 ${total} 个）` : `${items.length} 个请求`) +
-    (hasId ? '；看返回内容：action=response，request 传 # 后面的编号' : '；扩展版本旧，看不了返回内容——重载一下扩展')
+  const head =
+    (total > items.length
+      ? tt('res.devtools.netHead', { shown: items.length, total })
+      : tt('res.devtools.netCount', { n: items.length })) +
+    (hasId ? tt('res.devtools.netHintResponse') : tt('res.devtools.netHintOldExt'))
   return `${head}\n${lines.join('\n')}`
 }
 
 export async function responseBody(call, tabId, requestId, limit = 6000) {
-  if (!requestId) throw new Error('action=response 需要 request（action=network 列出的 # 编号）')
+  if (!requestId) throw new Error(tt('err.devtools.requestNeeded'))
   const id = String(requestId).replace(/^#/, '')
   let r
   try {
     r = await call('cdp', { tabId, method: 'Network.getResponseBody', params: { requestId: id } })
   } catch (e) {
     if (/No resource|No data found|identifier/i.test(e.message)) {
-      throw new Error('拿不到这个请求的返回内容（太早了被清掉、请求还没完成，或调试器断开过）——action=network reload=true 重抓一次')
+      throw new Error(tt('err.devtools.noBody'))
     }
     throw e
   }
   const { body = '', base64Encoded } = r.result || {}
-  if (base64Encoded) return `(二进制内容，约 ${Math.round((body.length * 3) / 4 / 1024)}KB——不是文字)`
+  if (base64Encoded) {
+    return tt('res.devtools.binary', { size: `${Math.round((body.length * 3) / 4 / 1024)}KB` })
+  }
   let text = body
   const t = body.trim()
   if (t.startsWith('{') || t.startsWith('[')) {
     try { text = JSON.stringify(JSON.parse(t), null, 2) } catch {}
   }
-  return text.length > limit ? text.slice(0, limit) + `\n…（截断，全文 ${text.length} 字）` : text || '(空)'
+  return text.length > limit
+    ? text.slice(0, limit) + tt('res.devtools.truncated', { n: text.length })
+    : text || tt('res.devtools.empty')
 }
 
 export async function clearLogs(call, tabId) {
   await call('console', { tabId, clear: true })
   await call('network', { tabId, clear: true })
-  return '已清空控制台和网络记录'
+  return tt('res.devtools.cleared')
 }

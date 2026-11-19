@@ -6,8 +6,8 @@
 // ② 同一条文案的 %占位符集合一致（少一个占位符，那句英文/俄文就丢了参数）
 // ③ 每个值都非空；en 里没有中文；ru 里是西里尔字母
 // ④ 字典是扁平的「键 → 字符串」，没有嵌套（t() 只做一次查表）
-// ⑤ index.js 里 t('…') 引用的键全都在 zh 里有；反过来 zh 里的键也都被用到（防拼错键名）
-// ⑥ index.js 里工具描述 / 参数说明 / 报错这层不再有写死的中文
+// ⑤ 各模块里 t('…') / tt('…') 引用的键全都在 zh 里有；反过来 zh 里的键也都被用到（防拼错键名）
+// ⑥ 各模块里工具描述 / 参数说明 / 报错这层不再有写死的中文（trace/log 这类只给开发者看的不算）
 // ⑦ createT() / normalizeLocale() 的兜底：认不出的语言回 zh，缺键回 zh，缺占位符回 zh，未知键返回键名
 
 import fs from 'node:fs'
@@ -16,7 +16,10 @@ import { fileURLToPath } from 'node:url'
 import { DICTS, LOCALES, DEFAULT_LOCALE, normalizeLocale, placeholders, fmt, createT } from '../plugin/i18n/index.js'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-const INDEX_JS = path.join(here, '..', 'plugin', 'index.js')
+const PLUGIN = path.join(here, '..', 'plugin')
+// 会给用户 / 模型看文案的模块。index.js 是工具本体，其余是各个动作的实现和安装提示。
+const SOURCES = ['index.js', 'refs.js', 'nav.js', 'download.js', 'drag.js', 'devtools.js', 'panel.js', 'setup.js']
+  .map((f) => path.join(PLUGIN, f))
 const CJK = /[\u3400-\u4dbf\u4e00-\u9fff]/
 
 let failures = 0
@@ -75,26 +78,27 @@ check('字典是扁平的键→字符串', nested.length === 0, nested.slice(0, 
 check(`DICTS / LOCALES 覆盖 zh、en、ru（默认 ${DEFAULT_LOCALE}）`,
   LOCALES.join(',') === 'zh,en,ru' && DEFAULT_LOCALE === 'zh' && LOCALES.every((l) => DICTS[l] && (l in DICTS)))
 
-// ⑤ index.js 引用的键都在字典里；字典里的键也都被引用
-const source = fs.readFileSync(INDEX_JS, 'utf8')
-const used = new Set([...source.matchAll(/\bt\(\s*'([^']+)'/g)].map((m) => m[1]))
+// ⑤ 各模块引用的键都在字典里；字典里的键也都被引用
+const sources = SOURCES.map((f) => [path.basename(f), fs.readFileSync(f, 'utf8')])
+const used = new Set(sources.flatMap(([, src]) => [...src.matchAll(/\b(?:t|tt)\(\s*'([^']+)'/g)].map((m) => m[1])))
 const unknown = [...used].filter((k) => !(k in DICTS.zh))
-check('index.js 用到的键都在字典里', unknown.length === 0, unknown.join(', '))
+check(`${sources.length} 个模块用到的键都在字典里`, unknown.length === 0, unknown.join(', '))
 const unusedKeys = zhKeys.filter((k) => !used.has(k))
-check('字典里的键都被 index.js 用到（防多余 / 拼错）', unusedKeys.length === 0, unusedKeys.join(', '))
+check('字典里的键都被模块用到（防多余 / 拼错）', unusedKeys.length === 0, unusedKeys.join(', '))
 
 // ⑥ 模型可见的那层没有写死中文：描述 / 参数说明 / 报错都走 t()
-const cjkDescriptions = [...source.matchAll(/(?:^\s*description:|[{,]\s*description:)\s*([^\n]*)/gm)]
+const indexSource = sources[0][1]
+const cjkDescriptions = [...indexSource.matchAll(/(?:^\s*description:|[{,]\s*description:)\s*([^\n]*)/gm)]
   .map((m) => m[1])
   .filter((tail) => CJK.test(tail))
 check('没有写死中文的 description', cjkDescriptions.length === 0, cjkDescriptions.slice(0, 5).join('\n    '))
-const cjkErrors = [...source.matchAll(/new Error\(([^\n]*)/g)]
-  .map((m) => m[1])
+const cjkErrors = sources.flatMap(([name, src]) => [...src.matchAll(/new Error\(([^\n]*)/g)]
+  .map((m) => `${name}: ${m[1]}`))
   .filter((tail) => CJK.test(tail))
 check('没有写死中文的 new Error', cjkErrors.length === 0, cjkErrors.slice(0, 5).join('\n    '))
 check('description 都从 t() 取（12 个工具 × 参数）',
-  (source.match(/description: t\(/g) || []).length >= 70,
-  `实际 ${(source.match(/description: t\(/g) || []).length} 处`)
+  (indexSource.match(/description: t\(/g) || []).length >= 70,
+  `实际 ${(indexSource.match(/description: t\(/g) || []).length} 处`)
 
 // ⑦ 兜底行为
 const tZh = createT(undefined)
