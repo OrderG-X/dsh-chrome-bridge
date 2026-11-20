@@ -69,6 +69,12 @@
         <input type="checkbox" role="switch" data-act="window" checked>
         <span class="switch" aria-hidden="true"></span>
       </label>
+      <!-- 「允许访问文件网址」没开才显示：Chrome 默认关着，关着时 DSH 往网页里上传文件会失败（issue #7） -->
+      <div class="row" id="fileRow" hidden>
+        <span class="tile purple" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 1.8H4.6c-.9 0-1.6.7-1.6 1.6v9.2c0 .9.7 1.6 1.6 1.6h6.8c.9 0 1.6-.7 1.6-1.6V5.8z"/><path d="M9 1.8v4h4M8 12V8.2M6.3 9.8 8 8.1l1.7 1.7"/></svg></span>
+        <span class="row-main"><span class="row-title" data-i18n="files">上传文件</span><span class="row-hint" data-i18n="filesHint">先打开「允许访问文件网址」</span></span>
+        <button class="link" type="button" data-act="fileAccess" data-i18n="filesGo">去打开</button>
+      </div>
     </div>
   </section>
 

@@ -416,6 +416,44 @@ function sessionCwd(exec) {
 }
 
 /**
+ * 点击 / 按键让页面要选文件时，扩展已把系统的选文件窗口拦下、回一个 id。记在「会话 + 标签页」名下：
+ * 之后这个会话 upload 不给目标就带着它去，别的会话拿不到（不会把文件塞进人家刚点开的框）。
+ */
+const chooserIds = new Map()
+const chooserKey = (tabId) => `${sessionKey()}:${Number(tabId)}`
+
+/** 点击 / 按键回话后面补的那句。老扩展不回 fileChooser，就什么也不加 */
+function chooserNote(r, tabId) {
+  const c = r && r.fileChooser
+  if (!c) return ''
+  if (c.unsupported) return '\n' + t('note.fileChooserUnsupported')
+  if (c.folder) return '\n' + t('note.fileChooserFolder')
+  chooserIds.set(chooserKey(tabId), c.id)
+  return '\n' + t('note.fileChooser', { multi: c.mode === 'selectMultiple' ? t('note.fileChooserMulti') : '' })
+}
+
+/**
+ * upload 的报错换成说得清的话：
+ *   没开「允许访问文件网址」：新扩展报 FILE_ACCESS_OFF（带详情页地址），老扩展只回 CDP 的一句 Not allowed（issue #7）
+ *   单选框给了多个文件 / 页面没在等选文件 / 用户自己已经选好 / 选文件夹的框（新扩展的记号）
+ *   不给目标时老扩展的参数错（它不认这种用法）→ 还是「要 ref 或 selector」
+ * 别的错原样抛。
+ */
+function uploadError(e, noTarget) {
+  const msg = String(e && e.message || e)
+  if (/FILE_ACCESS_OFF|Not allowed/.test(msg)) {
+    const url = (/chrome:\/\/extensions\/\?id=[a-p]{32}/.exec(msg) || [])[0] || 'chrome://extensions'
+    return new Error(t('err.fileAccessOff', { url }))
+  }
+  if (msg.includes('MULTI_NOT_ALLOWED')) return new Error(t('err.uploadSingle'))
+  if (msg.includes('NO_FILE_CHOOSER')) return new Error(t('err.uploadNoChooser'))
+  if (msg.includes('USER_PICKED')) return new Error(t('err.uploadUserPicked'))
+  if (msg.includes('FOLDER_INPUT')) return new Error(t('err.uploadFolder'))
+  if (noTarget && /params\.selector|mandatory field|Invalid parameters|没找到文件输入框/.test(msg)) return new Error(t('err.uploadNeedsTarget'))
+  return e
+}
+
+/**
  * upload 能塞进网页的文件：只限会话工作目录、系统临时目录下的普通文件，路径里任何一段以 . 开头
  * （~/.ssh、.env 这类隐藏目录/文件）都不行。按 realpath 判断，软链接绕不过去；交给扩展的也是 realpath。
  */
@@ -649,24 +687,24 @@ export function apply(ctx, config) {
         if (args.ref !== undefined && args.ref !== null) {
           const el = await locate(call, tabId, args.ref, { wantPoint: count > 1 })
           if (el.selector && count === 1) {
-            const r = await call('clickEl', { tabId, selector: el.selector, ...withCursor() })
-            return { text: `已点击 [${args.ref}] ${r.target.tag}「${r.target.text}」@ (${r.x}, ${r.y})` }
+            const r = await call('clickEl', { tabId, selector: el.selector, ...withCursor(), chooser: true })
+            return { text: `已点击 [${args.ref}] ${r.target.tag}「${r.target.text}」@ (${r.x}, ${r.y})${chooserNote(r, tabId)}` }
           }
           // shadow DOM / iframe 里的元素（选择器够不着），或者要双击：按坐标点
-          const r = await call('click', { tabId, x: el.x, y: el.y, clickCount: count, ...withCursor() })
-          return { text: `已点击 [${args.ref}] ${el.tag}「${el.text}」@ (${r.x}, ${r.y})${count > 1 ? ` ×${count}` : ''}` }
+          const r = await call('click', { tabId, x: el.x, y: el.y, clickCount: count, ...withCursor(), chooser: true })
+          return { text: `已点击 [${args.ref}] ${el.tag}「${el.text}」@ (${r.x}, ${r.y})${count > 1 ? ` ×${count}` : ''}${chooserNote(r, tabId)}` }
         }
         if (args.selector) {
-          const r = await call('clickEl', { tabId, selector: args.selector, ...withCursor() })
-          return { text: `已点击 ${r.target.tag}「${r.target.text}」@ (${r.x}, ${r.y})` }
+          const r = await call('clickEl', { tabId, selector: args.selector, ...withCursor(), chooser: true })
+          return { text: `已点击 ${r.target.tag}「${r.target.text}」@ (${r.x}, ${r.y})${chooserNote(r, tabId)}` }
         }
         if (args.text) {
-          const r = await call('clickText', { tabId, text: args.text, exact: false, ...withCursor() })
-          return { text: `已点击 ${r.target.tag}「${r.target.text}」@ (${r.x}, ${r.y})` }
+          const r = await call('clickText', { tabId, text: args.text, exact: false, ...withCursor(), chooser: true })
+          return { text: `已点击 ${r.target.tag}「${r.target.text}」@ (${r.x}, ${r.y})${chooserNote(r, tabId)}` }
         }
         if (args.x !== undefined && args.y !== undefined) {
-          const r = await call('click', { tabId, x: Number(args.x), y: Number(args.y), clickCount: count, ...withCursor() })
-          return { text: `已点击坐标 (${r.x}, ${r.y})` }
+          const r = await call('click', { tabId, x: Number(args.x), y: Number(args.y), clickCount: count, ...withCursor(), chooser: true })
+          return { text: `已点击坐标 (${r.x}, ${r.y})${chooserNote(r, tabId)}` }
         }
         throw new Error(t('err.clickNeeds'))
       },
@@ -720,8 +758,8 @@ export function apply(ctx, config) {
           }
           case 'key': {
             if (!args.key) throw new Error(t('err.keyNeedsKey'))
-            await call('key', { tabId, key: args.key })
-            return { text: `已按键 ${args.key}` }
+            const r = await call('key', { tabId, key: args.key, chooser: true })
+            return { text: `已按键 ${args.key}${chooserNote(r, tabId)}` }
           }
           case 'select': {
             if (!selector && !el) throw new Error(t('err.selectNeedsTarget'))
@@ -734,11 +772,22 @@ export function apply(ctx, config) {
             return { text: `已选择「${r.label}」(${r.value})` }
           }
           case 'upload': {
-            if (!selector && !el) throw new Error(t('err.uploadNeedsTarget'))
             if (!args.files?.length) throw new Error(t('err.uploadNeedsFiles'))
             noShadow('upload')
             const files = uploadable(args.files, sessionCwd(exec))
-            const r = await call('upload', { tabId, selector, files })
+            if (!selector && !el) {
+              // 没给目标：塞给本会话刚才点击时拦下的那个选文件框（带着点击回话里的 id 去，扩展核对）
+              const key = chooserKey(tabId)
+              const used = chooserIds.get(key)
+              let r
+              try { r = await call('upload', { tabId, files, chooserId: used }) } catch (e) { throw uploadError(e, true) }
+              if (!r || !r.chooser) throw new Error(t('err.uploadNeedsTarget'))
+              // 等回包时这个会话可能又点开了新框（存了新 id）：只删这次用掉的
+              if (chooserIds.get(key) === used) chooserIds.delete(key)
+              return { text: `已把 ${r.files.length} 个文件交给页面刚才打开的选文件框` }
+            }
+            let r
+            try { r = await call('upload', { tabId, selector, files }) } catch (e) { throw uploadError(e) }
             return { text: `已把 ${r.files.length} 个文件塞进 ${target}` }
           }
           case 'focus': {

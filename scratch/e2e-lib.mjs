@@ -68,10 +68,11 @@ function pipeClient(proc) {
       else p.resolve(msg.result)
     }
   })
-  return (method, params = {}) => new Promise((resolve, reject) => {
+  // sessionId：发给 Target.attachToTarget（flatten）接上的某个页面，比如 chrome://extensions
+  return (method, params = {}, sessionId) => new Promise((resolve, reject) => {
     const id = ++seq
     pending.set(id, { resolve, reject })
-    out.write(`${JSON.stringify({ id, method, params })}\0`)
+    out.write(`${JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) })}\0`)
     setTimeout(() => { if (pending.delete(id)) reject(new Error(`${method} 超时`)) }, 30000)
   })
 }

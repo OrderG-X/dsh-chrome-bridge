@@ -5,6 +5,7 @@
  *   ③ 等浏览器按注册拉起宿主、扩展连上（cb status）
  *   ④ cb 开本地页面、读标题；再用插件自己的 browser_* 工具读同一页
  *   ⑤ 下载文件、同源 iframe 里的元素（e2e-features.mjs）
+ *   ⑥ 上传文件：没开「允许访问文件网址」时报清楚、点上传按钮拦下选文件窗口再塞文件（e2e-upload.mjs）
  *
  * CI（GitHub 的 macOS / Windows / Linux 机器）里用真 HOME、真注册、默认宿主目录，测的就是用户机器上那条路。
  * 本地跑（没有 CI 环境变量）时 HOME 和宿主目录都换成临时的，不碰你自己的 Chrome 和正在用的宿主。
@@ -27,6 +28,7 @@ import { execFileSync } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { WIN, OS, FIXED_EXT_ID, sleep, checker, browserBin, launchBrowser, cb, dumpLogs } from './e2e-lib.mjs'
 import { featureChecks } from './e2e-features.mjs'
+import { uploadChecks } from './e2e-upload.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const argv = process.argv.slice(2)
@@ -243,6 +245,9 @@ try {
 
   // ⑥ 下载文件、同源 iframe（见 e2e-features.mjs）
   await featureChecks({ check, tools, browserCdp: browser.cdp })
+
+  // ⑦ 上传文件（会切「允许访问文件网址」、让扩展重载，放最后；Edge 的扩展页不一样，只在 Chrome 上测）
+  if (BROWSER === 'chrome') await uploadChecks({ check, tools, browserCdp: browser.cdp, extId: browser.extId, cbFile: p.cb, headed: HEADED })
 } catch (e) {
   check('没有异常', false, e && e.stack || e)
 } finally {

@@ -110,6 +110,8 @@ cb tabs
 
 Until step 2 is done the `browser_*` tools fail **loudly with exactly these steps** — never silently.
 
+**To let DSH upload files into web pages**: in `chrome://extensions` open DSH Bridge's **Details** and turn on **Allow access to file URLs** (Chrome keeps it off by default, and uploads fail while it is off; the extension popup also shows a "File uploads · Open" row). With it on, when DSH clicks a page's upload button the system file picker stays closed and DSH hands the file over itself.
+
 ### 🧩 The twelve native tools
 
 | Tool | What it does |

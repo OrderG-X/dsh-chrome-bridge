@@ -13,6 +13,8 @@ Lets DSH work in the Chrome you already use: real clicks and typing, a cursor yo
 
 Once both are in, the plugin shows "Connected" on the Plugins page.
 
+To let DSH upload files into web pages: open the extension's **Details** in Chrome and turn on **Allow access to file URLs** (Chrome keeps it off by default). The DSH Bridge popup also shows a "File uploads · Open" row.
+
 ## Update
 
 Open it on the Plugins page and click "Update to …". A new version can be installed about a day after it is released.

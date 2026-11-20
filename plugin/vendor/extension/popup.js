@@ -50,6 +50,9 @@ const I18N = {
     cursorHint: '只管显示，关掉也照常操作',
     window: '新页开在单独窗口',
     windowHint: '关掉就开在你当前窗口的后台',
+    files: '上传文件',
+    filesHint: '先打开「允许访问文件网址」',
+    filesGo: '去打开',
     sessions: '正在用浏览器的对话',
     activity: '最近操作',
     releaseAll: '全部放开',
@@ -138,6 +141,9 @@ const I18N = {
     cursorHint: 'Off: just hidden; DSH keeps working',
     window: 'New pages in a separate window',
     windowHint: 'Off: background tabs in your current window',
+    files: 'File uploads',
+    filesHint: 'Turn on "Allow access to file URLs" first',
+    filesGo: 'Open',
     sessions: 'Conversations using the browser',
     activity: 'Recent actions',
     releaseAll: 'Release all',
@@ -226,6 +232,9 @@ const I18N = {
     cursorHint: 'Выкл.: курсор скрыт, работа идёт',
     window: 'Новые страницы в отдельном окне',
     windowHint: 'Выкл.: фоновые вкладки в текущем окне',
+    files: 'Загрузка файлов',
+    filesHint: 'Сначала включите «Разрешить открывать локальные файлы по ссылкам»',
+    filesGo: 'Открыть',
     sessions: 'Диалоги, которые работают с браузером',
     activity: 'Последние действия',
     releaseAll: 'Отпустить все',
@@ -625,6 +634,10 @@ document.addEventListener('click', async (ev) => {
       render(await ask('releaseAll'))
       toast(T('releasedAll'))
       break
+    case 'fileAccess':
+      // 扩展详情页：「允许访问文件网址」就在里面。切换后 Chrome 会重载扩展，这个弹窗也会跟着关掉
+      chrome.tabs.create({ url: `chrome://extensions/?id=${chrome.runtime.id}` })
+      break
     case 'diagnostics': {
       const r = await ask('diagnostics')
       if (r && r.text) copy(r.text, T('copied'))
@@ -666,6 +679,10 @@ $('moreAct').addEventListener('click', () => {
 })
 
 applyStatic()
+// Chrome 默认不让扩展读电脑上的文件，没开时 DSH 上传文件会失败：显示一行提醒和「去打开」（切换开关会重载扩展，不用盯着变）
+try {
+  chrome.extension.isAllowedFileSchemeAccess().then((ok) => { $('fileRow').hidden = ok !== false }, () => {})
+} catch {}
 tick()
 timer = setInterval(tick, 1000)
 addEventListener('unload', () => clearInterval(timer))
