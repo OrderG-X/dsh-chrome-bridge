@@ -100,6 +100,12 @@ check('description 都从 t() 取（12 个工具 × 参数）',
   (indexSource.match(/description: t\(/g) || []).length >= 70,
   `实际 ${(indexSource.match(/description: t\(/g) || []).length} 处`)
 
+// index.js 里 t 是翻译函数：回调参数 / 局部变量再叫 t 会把它盖掉（1.19 前 PR #8 列标签页时就崩过：t is not a function）
+const indexSrc = sources.find(([n]) => n === 'index.js')[1]
+const shadowT = indexSrc.split('\n').map((l, i) => [i + 1, l])
+  .filter(([, l]) => /\(t\)\s*=>|[(,]\s*t\s*[,)]\s*=>|(^|[^.\w])t\s*=>|\b(const|let|var)\s+t\b|\{\s*t\s*[,}]/.test(l) && !/^let t = createT\(/.test(l))
+check('index.js 没有别的变量叫 t（不盖掉翻译函数）', shadowT.length === 0, shadowT.map(([n, l]) => `${n}: ${l.trim()}`).join('\n    '))
+
 // ⑦ 兜底行为
 const tZh = createT(undefined)
 const tEn = createT('en')

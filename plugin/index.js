@@ -117,8 +117,8 @@ function probeExec(exec) {
 }
 
 const short = (v, n = 40) => {
-  const t = String(v ?? '').replace(/\s+/g, ' ').trim()
-  return t.length > n ? t.slice(0, n - 1) + '…' : t
+  const s = String(v ?? '').replace(/\s+/g, ' ').trim()
+  return s.length > n ? s.slice(0, n - 1) + '…' : s
 }
 
 /** 一眼看得懂的一句话：「[3]」「「加载完成」」「back」「https://…」 */
@@ -286,9 +286,9 @@ function forgetTab(id) {
  * 再挑不在 DSH 干活窗口里的。老扩展不给 focused / agentWindow，就退回第一个 active（以前的做法）。
  */
 function userTab(tabs) {
-  return tabs.find((t) => t.active && t.focused) ||
-    tabs.find((t) => t.active && !t.agentWindow) ||
-    tabs.find((t) => t.active)
+  return tabs.find((tb) => tb.active && tb.focused) ||
+    tabs.find((tb) => tb.active && !tb.agentWindow) ||
+    tabs.find((tb) => tb.active)
 }
 
 async function resolveTab(tab) {
@@ -306,7 +306,7 @@ async function resolveTab(tab) {
   }
   const id = currentTab.get(sessionKey())
   if (id !== undefined) {
-    if ((await call('tabs')).some((t) => t.id === id)) return id
+    if ((await call('tabs')).some((tb) => tb.id === id)) return id
     currentTab.delete(sessionKey())
   }
   throw new Error(t('err.noTab'))
@@ -578,18 +578,18 @@ export function apply(ctx, config) {
           case 'list': {
             const tabs = await call('tabs')
             const mine = userTab(tabs)
-            const lines = tabs.map((t) =>
-              `${t === mine ? '*' : ' '} ${String(t.id).padStart(5)} ${(t.title || '').slice(0, 50)} — ${t.url.slice(0, 80)}${t.agentWindow ? t('res.tabs.agentWindow') : ''}`)
+            const lines = tabs.map((tb) =>
+              `${tb === mine ? '*' : ' '} ${String(tb.id).padStart(5)} ${(tb.title || '').slice(0, 50)} — ${tb.url.slice(0, 80)}${tb.agentWindow ? t('res.tabs.agentWindow') : ''}`)
             const text = lines.join('\n') || t('res.tabs.empty')
             return { text: lines.length ? `${text}\n${t('res.tabs.footnote')}` : text }
           }
           case 'find': {
             const q = String(args.query || '').toLowerCase()
-            const tabs = (await call('tabs')).filter((t) =>
-              (t.title || '').toLowerCase().includes(q) || (t.url || '').toLowerCase().includes(q))
+            const tabs = (await call('tabs')).filter((tb) =>
+              (tb.title || '').toLowerCase().includes(q) || (tb.url || '').toLowerCase().includes(q))
             return {
               text:
-                tabs.map((t) => `${String(t.id).padStart(5)} ${t.title} — ${t.url}`).join('\n') ||
+                tabs.map((tb) => `${String(tb.id).padStart(5)} ${tb.title} — ${tb.url}`).join('\n') ||
                 t('res.tabs.noMatch'),
             }
           }
@@ -1233,7 +1233,7 @@ export function apply(ctx, config) {
       throw e
     }
   }
-  trace(`已注册 ${tools.length} 个工具: ${tools.map((t) => t.name).join(', ')}`)
+  trace(`已注册 ${tools.length} 个工具: ${tools.map((x) => x.name).join(', ')}`)
 
   // 上游报「图片太多」时卸掉最老的几张再重试（见 image-guard.js）
   installImageGuard(ctx, trace)
