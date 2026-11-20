@@ -69,11 +69,11 @@ function pipeClient(proc) {
     }
   })
   // sessionId：发给 Target.attachToTarget（flatten）接上的某个页面，比如 chrome://extensions
-  return (method, params = {}, sessionId) => new Promise((resolve, reject) => {
+  return (method, params = {}, sessionId, ms = 30000) => new Promise((resolve, reject) => {
     const id = ++seq
     pending.set(id, { resolve, reject })
     out.write(`${JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) })}\0`)
-    setTimeout(() => { if (pending.delete(id)) reject(new Error(`${method} 超时`)) }, 30000)
+    setTimeout(() => { if (pending.delete(id)) reject(new Error(`${method} 超时`)) }, ms)
   })
 }
 
@@ -112,7 +112,8 @@ export async function launchBrowser({ bin, extDir, nmFile, headed = false }) {
     try { fs.rmSync(udd, { recursive: true, force: true, maxRetries: 5 }) } catch {}
   }
   try {
-    const ver = await cdp('Browser.getVersion')
+    // 第一次回话要等浏览器起来：GitHub 的 Windows 机器冷启动 Chrome 要 30 秒上下（11-20 两次卡在 30 秒超时线上），放宽到 2 分钟
+    const ver = await cdp('Browser.getVersion', {}, undefined, 120000)
     const { id } = await cdp('Extensions.loadUnpacked', { path: extDir })
     return { proc, cdp, product: ver.product, extId: id, log: () => log, close }
   } catch (e) {
