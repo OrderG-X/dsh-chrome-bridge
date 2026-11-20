@@ -106,6 +106,11 @@ const shadowT = indexSrc.split('\n').map((l, i) => [i + 1, l])
   .filter(([, l]) => /\(t\)\s*=>|[(,]\s*t\s*[,)]\s*=>|(^|[^.\w])t\s*=>|\b(const|let|var)\s+t\b|\{\s*t\s*[,}]/.test(l) && !/^let t = createT\(/.test(l))
 check('index.js 没有别的变量叫 t（不盖掉翻译函数）', shadowT.length === 0, shadowT.map(([n, l]) => `${n}: ${l.trim()}`).join('\n    '))
 
+// 用了 tt() 的模块必须 import 了它（PR #8 里 index.js 的 clip 用了 tt 却没 import：读超长页面就 ReferenceError）
+const ttNoImport = sources.filter(([, src]) => /(^|[^.\w])tt\(/m.test(src) &&
+  !/import\s*\{[^}]*\btt\b[^}]*\}\s*from\s*['"]\.\.?\/(i18n\/)?index\.js['"]/.test(src)).map(([n]) => n)
+check('用了 tt() 的模块都 import 了 tt', ttNoImport.length === 0, ttNoImport.join(', '))
+
 // ⑦ 兜底行为
 const tZh = createT(undefined)
 const tEn = createT('en')

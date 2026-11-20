@@ -124,6 +124,11 @@ show()
     check('框架里的元素能单独截图', shot.ok, shot.text)
     const txt = await run('browser_read', { tab, what: 'text' })
     check('读文字带上框架里的字', txt.text.includes('框架里的字') && txt.text.includes('跨站框架，读不到'), txt.text.slice(-400))
+    // 超过 limit 要截断并说明，不能报错（PR #8 里 clip 用了没 import 的 tt：一截断就 ReferenceError）
+    const cut = await run('browser_read', { tab, what: 'text', limit: 20 })
+    check('文字超过 limit：截断并说明全文多少字', cut.ok && cut.text.includes('（截断，全文'), cut.text.slice(-200))
+    const cutHtml = await run('browser_read', { tab, what: 'html', limit: 20 })
+    check('HTML 超过 limit：截断并说明', cutHtml.ok && cutHtml.text.includes('（截断，全文'), cutHtml.text.slice(-200))
 
     // ── 下载 ──
     const dl = async (args) => {

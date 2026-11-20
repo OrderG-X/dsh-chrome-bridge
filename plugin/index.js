@@ -402,7 +402,7 @@ const withCursor = (extra = {}) => {
   return script ? { ...extra, script } : extra
 }
 
-const clip = (s, n = 6000) => (s.length > n ? s.slice(0, n) + tt('res.read.truncated', { n: s.length }) : s)
+const clip = (s, n = 6000) => (s.length > n ? s.slice(0, n) + t('res.read.truncated', { n: s.length }) : s)
 
 /** DSH 的会话投影服务（读会话现在的工作目录用）；apply 里 inject 到了才有 */
 let projections = null

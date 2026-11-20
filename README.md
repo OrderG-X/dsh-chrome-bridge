@@ -135,7 +135,7 @@ Until step 2 is done the `browser_*` tools fail **loudly with exactly these step
 
 ### 🌍 Tool text in English or Russian
 
-What the model reads for the `browser_*` tools — descriptions, parameter docs, the errors for bad arguments or a missing connection, the result of every action (tabs, snapshots, waits, clicks, downloads, DevTools…), and the install steps shown when Chrome isn't connected — is Chinese by default. Point `config.locale` at `en` or `ru` and DSH hands the model English / Russian text instead; tool names and arguments stay exactly the same:
+What the model reads for the `browser_*` tools — descriptions, parameter docs, the errors for bad arguments or a missing connection, the results of the actions (tabs, snapshots, waits, clicks, downloads, DevTools…), and the install steps shown when Chrome isn't connected — is Chinese by default. Point `config.locale` at `en` or `ru` and DSH hands the model English / Russian text instead; tool names and arguments stay exactly the same:
 
 ```yaml
 # the profile's patch layer, e.g. ~/.dsh/profiles/<profile>/cordis.patch.yml
@@ -144,7 +144,7 @@ What the model reads for the `browser_*` tools — descriptions, parameter docs,
     locale: en      # en | ru | zh (default)
 ```
 
-Restart DSH after changing it — the descriptions are part of the context a session gets when it starts. A translation that misses a key, or drops a `%placeholder` the Chinese text needs, falls back to Chinese for that one string, so nothing ever comes out half-empty or with a missing detail. Still Chinese: the few texts the browser extension assembles itself (some of its own error messages and the truncation notes on very long page text) — those live in the extension bundle and get their own change — plus the trace logs that only show up in DSH's log for developers.
+Restart DSH after changing it — the descriptions are part of the context a session gets when it starts. A translation that misses a key, or drops a `%placeholder` the Chinese text needs, falls back to Chinese for that one string, so nothing ever comes out half-empty or with a missing detail. Still Chinese: the state words inside snapshot lines (checked, expanded, disabled, read-only…, the option count and the cross-site frame note); the few texts the browser extension assembles itself (some of its own error messages and the truncation notes on very long page text) and the native host's own messages (for example when the extension doesn't answer in time) — those live in the extension / host and get their own change; the reason the host writes to `launch-error.txt` when it can't start; and the trace logs that only show up in DSH's log for developers.
 
 ### 👀 What you see while it works
 

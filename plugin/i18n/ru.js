@@ -169,7 +169,7 @@ export default {
   'res.wait.whatText': 'текст «%text»',
   'res.wait.whatUrl': 'адрес, содержащий «%url»',
   'res.wait.found': 'Готово:',
-  'res.wait.goneState': 'Подтвердили:',
+  'res.wait.goneState': 'Больше нет:',
   'res.wait.ok': '%state %what — за %ms',
   'res.wait.still': 'ещё на месте',
   'res.wait.notYet': 'ещё не появился',

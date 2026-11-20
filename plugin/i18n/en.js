@@ -168,7 +168,7 @@ export default {
   'res.wait.whatText': 'text "%text"',
   'res.wait.whatUrl': 'a URL containing "%url"',
   'res.wait.found': 'Found',
-  'res.wait.goneState': 'Confirmed:',
+  'res.wait.goneState': 'No longer present:',
   'res.wait.ok': '%state %what after %ms',
   'res.wait.still': 'is still there',
   'res.wait.notYet': 'has not appeared yet',
