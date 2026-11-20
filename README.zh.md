@@ -135,7 +135,7 @@ cb tabs
 
 ### 🌍 工具文案支持英文 / 俄文
 
-模型看到的 `browser_*` 工具描述、参数说明、参数不对 / 没连上这类报错、各个动作的返回内容（标签页、快照、等待、点击、下载、DevTools……），以及没连上时给的安装步骤，默认都是中文。把 `config.locale` 设成 `en` 或 `ru`，DSH 就交给模型英文 / 俄文；工具名和参数完全不变：
+模型看到的 `browser_*` 工具描述、参数说明、参数不对 / 没连上这类报错、工具自己写的结果提示（标签页、快照、等待、点击、下载、DevTools……；网页正文、DevTools 抓到的内容保持原样），以及没连上时给的安装步骤，默认都是中文。把 `config.locale` 设成 `en` 或 `ru`，DSH 就交给模型英文 / 俄文；工具名和参数完全不变：
 
 ```yaml
 # profile 的 patch 层，例如 ~/.dsh/profiles/<profile>/cordis.patch.yml

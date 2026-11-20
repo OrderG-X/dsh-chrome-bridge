@@ -135,7 +135,7 @@ Until step 2 is done the `browser_*` tools fail **loudly with exactly these step
 
 ### 🌍 Tool text in English or Russian
 
-What the model reads for the `browser_*` tools — descriptions, parameter docs, the errors for bad arguments or a missing connection, the results of the actions (tabs, snapshots, waits, clicks, downloads, DevTools…), and the install steps shown when Chrome isn't connected — is Chinese by default. Point `config.locale` at `en` or `ru` and DSH hands the model English / Russian text instead; tool names and arguments stay exactly the same:
+What the model reads for the `browser_*` tools — descriptions, parameter docs, the errors for bad arguments or a missing connection, the result messages the tools write themselves (tabs, snapshots, waits, clicks, downloads, DevTools…; page text and captured DevTools data stay as they are), and the install steps shown when Chrome isn't connected — is Chinese by default. Point `config.locale` at `en` or `ru` and DSH hands the model English / Russian text instead; tool names and arguments stay exactly the same:
 
 ```yaml
 # the profile's patch layer, e.g. ~/.dsh/profiles/<profile>/cordis.patch.yml
