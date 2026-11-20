@@ -14,6 +14,7 @@ import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { refElementJs } from './refs.js'
+import { tt } from './i18n/index.js'
 
 const CHUNK = 2 * 1024 * 1024 // 页面里每次读回 2MB（base64 后约 2.7MB）
 const PAGE_MAX = 300 * 1024 * 1024 // 页面里最多暂存这么大，再大走插件直接下
@@ -70,7 +71,7 @@ export function uniquePath(dir, name) {
     const p = path.join(dir, i ? `${base} (${i})${ext}` : name)
     if (!fs.existsSync(p)) return p
   }
-  throw new Error(`${dir} 里同名文件太多了：${name}`)
+  throw new Error(tt('err.dlTooManyNames', { dir, name }))
 }
 
 export function humanSize(n) {
@@ -128,14 +129,14 @@ const DROP_JS = (id) => `(() => { if (window.__dshDl) delete window.__dshDl[${JS
 async function viaPage(call, tabId, url, file) {
   const id = crypto.randomUUID()
   const r = (await call('eval', { tabId, expression: FETCH_JS(id, url), awaitPromise: true, userGesture: false }, TIMEOUT_MS)).value || {}
-  if (r.status) throw new Error(`下载失败：服务器回 HTTP ${r.status}`)
+  if (r.status) throw new Error(tt('err.dlHttp', { status: r.status }))
   if (r.failed || r.tooBig) return null
   try {
     const fd = fs.openSync(file, 'w')
     try {
       for (let off = 0; off < r.size; off += CHUNK) {
         const b64 = (await call('eval', { tabId, expression: CHUNK_JS(id, off), userGesture: false })).value
-        if (typeof b64 !== 'string') throw new Error('页面跳走了，下载中断')
+        if (typeof b64 !== 'string') throw new Error(tt('err.dlPageGone'))
         fs.writeSync(fd, Buffer.from(b64, 'base64'))
       }
     } finally {
@@ -176,7 +177,7 @@ async function viaNode(call, tabId, target, file, fetchImpl = globalThis.fetch) 
         url = new URL(res.headers.get('location'), url).href
         continue
       }
-      if (!res.ok || !res.body) throw new Error(`下载失败：服务器回 HTTP ${res.status}`)
+      if (!res.ok || !res.body) throw new Error(tt('err.dlHttp', { status: res.status }))
       const out = fs.createWriteStream(file)
       let size = 0
       try {
@@ -189,7 +190,7 @@ async function viaNode(call, tabId, target, file, fetchImpl = globalThis.fetch) 
       }
       return { size, type: res.headers.get('content-type') || '', disposition: res.headers.get('content-disposition') || '', finalUrl: url }
     }
-    throw new Error('下载失败：重定向太多次')
+    throw new Error(tt('err.dlRedirects'))
   } finally {
     clearTimeout(timer)
   }
@@ -200,14 +201,20 @@ async function viaNode(call, tabId, target, file, fetchImpl = globalThis.fetch) 
  * @param opts.dir  存到哪个文件夹（调用方已经定好）
  */
 export async function download(call, tabId, { url, ref, selector, filename, dir }, deps = {}) {
-  if ((ref === undefined || ref === null) && !selector && !url) throw new Error('要给出 url、ref 或 selector 之一')
+  if ((ref === undefined || ref === null) && !selector && !url) throw new Error(tt('err.dlNeedsTarget'))
   const target = (await call('eval', { tabId, expression: TARGET_JS({ ref, selector, url }), userGesture: false })).value
-  if (!target) throw new Error('页面没回应（可能刚跳转，重试一次）')
-  if (target.error === 'gone') throw new Error(ref !== undefined && ref !== null ? `编号 ${ref} 已失效——重新 browser_read what=snapshot` : `没找到元素: ${selector}`)
-  if (target.error === 'nohref') throw new Error(`这个 ${target.tag} 元素没有链接地址（href / src）。是按钮的话，先 browser_click 它，看会不会打开下载链接`)
-  if (target.error === 'badurl') throw new Error(`网址不对：${target.raw}`)
+  if (!target) throw new Error(tt('err.dlNoAnswer'))
+  if (target.error === 'gone') {
+    throw new Error(
+      ref !== undefined && ref !== null
+        ? tt('err.dlRefGone', { ref })
+        : tt('err.noElement', { sel: selector }),
+    )
+  }
+  if (target.error === 'nohref') throw new Error(tt('err.dlNoHref', { tag: target.tag }))
+  if (target.error === 'badurl') throw new Error(tt('err.dlBadUrl', { raw: target.raw }))
   const proto = new URL(target.url).protocol
-  if (!['http:', 'https:', 'blob:', 'data:'].includes(proto)) throw new Error(`不支持这种网址：${proto}`)
+  if (!['http:', 'https:', 'blob:', 'data:'].includes(proto)) throw new Error(tt('err.dlBadProto', { proto }))
 
   fs.mkdirSync(dir, { recursive: true })
   const part = path.join(dir, `.dsh-download-${crypto.randomUUID()}.part`)
@@ -215,7 +222,7 @@ export async function download(call, tabId, { url, ref, selector, filename, dir 
     let via = 'page'
     let meta = await viaPage(call, tabId, target.url, part)
     if (!meta) {
-      if (proto === 'blob:' || proto === 'data:') throw new Error('页面里读不出这个文件（blob 链接可能已经失效：重新点一次生成它的按钮再试）')
+      if (proto === 'blob:' || proto === 'data:') throw new Error(tt('err.dlBlobDead'))
       via = 'direct'
       meta = await viaNode(call, tabId, target, part, deps.fetch)
     }

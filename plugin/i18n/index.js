@@ -62,3 +62,20 @@ export function createT(locale, dicts = DICTS) {
     return text
   }
 }
+
+/**
+ * 当前在用的 t()：插件启动时由 apply() 按 config.locale 设一次；
+ * 其他模块（refs / nav / download / drag / devtools / panel / setup）用 tt() 取文案。
+ */
+let active = createT(DEFAULT_LOCALE)
+
+/** 切到指定语言，并把新的 t() 返回出去（apply() 自己还要用）。 */
+export function setLocale(locale) {
+  active = createT(locale)
+  return active
+}
+
+/** 按当前语言取一条文案（模块内部用）。 */
+export function tt(key, vars) {
+  return active(key, vars)
+}

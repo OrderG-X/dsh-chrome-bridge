@@ -12,6 +12,7 @@
  */
 
 import { refElementJs } from './refs.js'
+import { tt } from './i18n/index.js'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -47,7 +48,9 @@ const elementJs = (end) =>
 
 const isElementEnd = (end) => hasRef(end) || !!end.selector || !!end.text
 const describe = (end) =>
-  hasRef(end) ? `[${end.ref}]` : end.selector || (end.text ? `「${end.text}」` : `(${end.x}, ${end.y})`)
+  hasRef(end)
+    ? `[${end.ref}]`
+    : end.selector || (end.text ? tt('res.drag.quotedText', { text: end.text }) : `(${end.x}, ${end.y})`)
 
 /** 一次 eval 算出两端的视口坐标，顺带判断是不是原生拖放。 */
 const PLAN_JS = (from, to) => `(async () => {
@@ -96,30 +99,40 @@ const NATIVE_JS = (from, to, a, b) => `(() => {
  */
 export async function drag(call, tabId, from, to, { steps = 12, cursor } = {}) {
   const plan = (await call('eval', { tabId, expression: PLAN_JS(from, to), userGesture: false })).value
-  if (!plan) throw new Error('页面没回话（可能刚跳转，重试一次）')
+  if (!plan) throw new Error(tt('err.dragNoAnswer'))
   if (plan.missing) {
     const end = plan.missing === 'from' ? from : to
-    throw new Error(`没找到${plan.missing === 'from' ? '起点' : '终点'} ${describe(end)}` +
-      (hasRef(end) ? '（编号可能已失效，重新 snapshot）' : ''))
+    throw new Error(
+      tt('err.dragNotFound', {
+        end: plan.missing === 'from' ? tt('which.start') : tt('which.end'),
+        desc: describe(end),
+      }) + (hasRef(end) ? tt('err.dragRefStale') : ''),
+    )
   }
-  if (plan.same) throw new Error(`起点 ${describe(from)} 和终点 ${describe(to)} 找到的是同一个元素——换个更具体的写法（ref 或 selector）`)
+  if (plan.same) {
+    throw new Error(tt('err.dragSame', { from: describe(from), to: describe(to) }))
+  }
   const { a, b } = plan
-  if (!plan.bIn) throw new Error(`终点 ${describe(to)} 不在当前屏幕里——先滚动让起点和终点都露出来`)
+  if (!plan.bIn) throw new Error(tt('err.dragOffscreen', { to: describe(to) }))
 
   const cur = async (fn) => {
     if (!cursor) return 0
     try { return Number(await fn(cursor)) || 0 } catch { return 0 }
   }
   // 光标先滑到起点亮名牌，到位了再按下
-  if (cursor) await sleep(Math.min(700, await cur((c) => c.move(a.x, a.y, { label: `拖拽 ${describe(from)} → ${describe(to)}` }))) + 60)
+  if (cursor) await sleep(Math.min(700, await cur((c) => c.move(a.x, a.y, { label: tt('res.drag.label', { from: describe(from), to: describe(to) }) }))) + 60)
 
   if (plan.native) {
     await cur((c) => c.down())
     await sleep(await cur((c) => c.move(b.x, b.y, { duration: 420, straight: true })))
     const r = (await call('eval', { tabId, expression: NATIVE_JS(from, to, a, b) })).value
     await cur((c) => c.up())
-    if (r && r.error) throw new Error('终点那里没有元素')
-    return `已拖拽 ${describe(from)} → ${describe(to)}（HTML5 拖放${r && r.accepted ? '，目标接受了' : '，但目标没表示接受——看看结果对不对'}）`
+    if (r && r.error) throw new Error(tt('err.dragNoTarget'))
+    return tt('res.drag.doneHtml5', {
+      from: describe(from),
+      to: describe(to),
+      verdict: r && r.accepted ? tt('res.drag.accepted') : tt('res.drag.notAccepted'),
+    })
   }
 
   const mouse = (type, p, extra) => call('cdp', {
@@ -139,5 +152,12 @@ export async function drag(call, tabId, from, to, { steps = 12, cursor } = {}) {
   }
   await mouse('mouseReleased', b, { button: 'left', buttons: 0, clickCount: 1 })
   await cur((c) => c.up())
-  return `已拖拽 ${describe(from)} → ${describe(to)}：(${Math.round(a.x)}, ${Math.round(a.y)}) → (${Math.round(b.x)}, ${Math.round(b.y)})`
+  return tt('res.drag.doneCoords', {
+    from: describe(from),
+    to: describe(to),
+    x1: Math.round(a.x),
+    y1: Math.round(a.y),
+    x2: Math.round(b.x),
+    y2: Math.round(b.y),
+  })
 }

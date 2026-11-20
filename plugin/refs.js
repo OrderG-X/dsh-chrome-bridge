@@ -14,6 +14,8 @@
  *   · 同一个元素再快照沿用旧编号（模型手里的旧编号继续有效）；页面跳转后全部失效
  */
 
+import { tt } from './i18n/index.js'
+
 const ATTR = 'data-dsh-ref'
 
 /** 在页面里跑：扫一遍可操作元素，打编号，返回一行一个的清单。 */
@@ -249,8 +251,7 @@ export const refElementJs = (ref) => `(document.querySelector(${JSON.stringify(`
   return el && el.isConnected && el.ownerDocument.defaultView ? el : null;
 })())`
 
-const goneError = (ref) =>
-  new Error(`编号 ${ref} 已失效（页面变了或跳转过）——重新 browser_read what=snapshot 拿新编号`)
+const goneError = (ref) => new Error(tt('err.refGone', { ref }))
 
 /**
  * 拍快照：返回给模型看的文本。
@@ -259,16 +260,16 @@ const goneError = (ref) =>
 export async function snapshot(call, tabId, { selector, limit = 8000, maxItems = 300 } = {}) {
   const r = await call('eval', { tabId, expression: SNAPSHOT_JS(selector, maxItems), userGesture: false })
   const v = r.value
-  if (!v) throw new Error('页面没返回快照（可能刚跳转，重试一次）')
-  if (v.error === 'scope') throw new Error(`没找到元素: ${selector}`)
+  if (!v) throw new Error(tt('err.snapshotFailed'))
+  if (v.error === 'scope') throw new Error(tt('err.noElement', { sel: selector }))
 
-  const head = `${v.title || ''}\n${v.url}\n可操作元素 ${v.count} 个（[N] 是编号：browser_click / browser_input 传 ref=N）`
-  const body = v.lines.join('\n') || '(没找到可操作的元素)'
+  const head = `${v.title || ''}\n${v.url}\n${tt('res.snap.head', { count: v.count })}`
+  const body = v.lines.join('\n') || tt('res.snap.nothing')
   let text = `${head}\n\n${body}`
-  if (v.more) text += `\n…还有 ${v.more} 个元素没列出——传 selector 只看页面的一部分`
+  if (v.more) text += tt('res.snap.more', { more: v.more })
   if (text.length > limit) {
     const cutAt = text.lastIndexOf('\n', limit)
-    text = text.slice(0, cutAt > 0 ? cutAt : limit) + `\n…（截断，全文 ${text.length} 字——传 selector 缩小范围，或调大 limit）`
+    text = text.slice(0, cutAt > 0 ? cutAt : limit) + tt('res.snap.truncated', { n: text.length })
   }
   return text
 }
@@ -280,7 +281,7 @@ export async function snapshot(call, tabId, { selector, limit = 8000, maxItems =
  */
 export async function locate(call, tabId, ref, { wantPoint = false } = {}) {
   const n = Number(ref)
-  if (!Number.isInteger(n) || n < 1) throw new Error(`编号要是正整数，收到的是 ${ref}`)
+  if (!Number.isInteger(n) || n < 1) throw new Error(tt('err.refNotInt', { ref }))
   const r = await call('eval', { tabId, expression: LOCATE_JS(n, wantPoint), userGesture: false })
   const v = r.value
   if (!v || v.gone) throw goneError(n)
@@ -304,7 +305,7 @@ export async function elementBox(call, tabId, { ref, selector }) {
     })()`,
     userGesture: false,
   })
-  if (!r.value) throw new Error(`没找到元素: ${selector}`)
+  if (!r.value) throw new Error(tt('err.noElement', { sel: selector }))
   return r.value
 }
 
@@ -322,7 +323,7 @@ export async function focusShadow(call, tabId, ref) {
     })()`,
   })
   if (r.value === null) throw goneError(n)
-  if (!r.value) throw new Error(`编号 ${n} 聚焦失败（元素可能不可聚焦）`)
+  if (!r.value) throw new Error(tt('err.refFocus', { n }))
 }
 
 /** shadow DOM / 框架里的下拉框：直接在页面里选（扩展的 select 只认 document.querySelector 找得到的）。 */
@@ -333,11 +334,11 @@ export async function selectInPage(call, tabId, ref, value) {
     expression: `(() => {
       const el = ${refElementJs(n)};
       if (!el) return null;
-      if (el.tagName !== 'SELECT') return { ok: false, why: '不是 <select> 元素' };
+      if (el.tagName !== 'SELECT') return { ok: false, why: ${JSON.stringify(tt('err.selectNotSelect'))} };
       const v = ${JSON.stringify(String(value))};
       const opts = [...el.options];
       const hit = opts.find((o) => o.value === v) || opts.find((o) => (o.textContent || '').trim() === v);
-      if (!hit) return { ok: false, why: '没有这个选项', options: opts.map((o) => o.value).slice(0, 20) };
+      if (!hit) return { ok: false, why: ${JSON.stringify(tt('err.selectNoOption'))}, options: opts.map((o) => o.value).slice(0, 20) };
       el.value = hit.value;
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -347,7 +348,14 @@ export async function selectInPage(call, tabId, ref, value) {
   })
   const v = r.value
   if (v === null) throw goneError(n)
-  if (!v.ok) throw new Error(`选择失败：${v.why}${v.options ? '（可选值：' + v.options.join(', ') + '）' : ''}`)
+  if (!v.ok) {
+    throw new Error(
+      tt('err.selectFailed', {
+        why: v.why,
+        options: v.options ? tt('err.selectOptions', { options: v.options.join(', ') }) : '',
+      }),
+    )
+  }
   return v
 }
 

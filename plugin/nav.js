@@ -6,6 +6,8 @@
  * 或者网址变了（单页应用只改历史记录、不换文档）并且 readyState=complete，就算到了。
  */
 
+import { tt } from './i18n/index.js'
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 export async function historyNav(call, tabId, action, timeoutMs = 20000) {
@@ -19,7 +21,7 @@ export async function historyNav(call, tabId, action, timeoutMs = 20000) {
     const h = (await call('cdp', { tabId, method: 'Page.getNavigationHistory', params: {} })).result
     const i = h.currentIndex + (action === 'back' ? -1 : 1)
     if (i < 0 || i >= h.entries.length) {
-      throw new Error(action === 'back' ? '已经是第一页了，没法后退' : '已经是最后一页了，没法前进')
+      throw new Error(action === 'back' ? tt('err.navFirstPage') : tt('err.navLastPage'))
     }
     await call('cdp', { tabId, method: 'Page.navigateToHistoryEntry', params: { entryId: h.entries[i].id } })
   }
@@ -51,10 +53,10 @@ export async function waitUntil(call, tabId, { selector, text, url, gone = false
   let cond, what
   if (text !== undefined) {
     cond = `(document.body ? document.body.innerText : '').includes(${JSON.stringify(text)})`
-    what = `文字「${text}」`
+    what = tt('res.wait.whatText', { text })
   } else if (url !== undefined) {
     cond = `location.href.includes(${JSON.stringify(url)})`
-    what = `网址包含「${url}」`
+    what = tt('res.wait.whatUrl', { url })
   } else {
     cond = VISIBLE_JS(selector)
     what = selector
@@ -64,12 +66,18 @@ export async function waitUntil(call, tabId, { selector, text, url, gone = false
   while (Date.now() - start < timeoutMs) {
     try {
       if ((await call('eval', { tabId, expression, userGesture: false })).value) {
-        return `${gone ? '已经没有' : '等到了'} ${what}，用了 ${Date.now() - start}ms`
+        return tt('res.wait.ok', {
+          state: gone ? tt('res.wait.goneState') : tt('res.wait.found'),
+          what,
+          ms: `${Date.now() - start}ms`,
+        })
       }
     } catch {
       // 页面正在跳转，执行上下文没了 —— 下一轮再看
     }
     await sleep(300)
   }
-  throw new Error(`等了 ${timeoutMs}ms，${what} ${gone ? '还在' : '还没出现'}`)
+  throw new Error(
+    tt('err.waitTimeout', { ms: `${timeoutMs}ms`, what, state: gone ? tt('res.wait.still') : tt('res.wait.notYet') }),
+  )
 }

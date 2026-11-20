@@ -24,7 +24,7 @@ import { historyNav, waitUntil } from './nav.js'
 import { PANEL_ROUTE, panelHandler } from './panel.js'
 import { drag } from './drag.js'
 import { download, downloadsDir, humanSize } from './download.js'
-import { createT, DEFAULT_LOCALE, normalizeLocale } from './i18n/index.js'
+import { createT, setLocale, DEFAULT_LOCALE, normalizeLocale } from './i18n/index.js'
 
 /**
  * 这里刻意不 import 任何外部包——不碰 `@deepseek-ai/dsh-tools`。
@@ -117,8 +117,8 @@ function probeExec(exec) {
 }
 
 const short = (v, n = 40) => {
-  const t = String(v ?? '').replace(/\s+/g, ' ').trim()
-  return t.length > n ? t.slice(0, n - 1) + '…' : t
+  const s = String(v ?? '').replace(/\s+/g, ' ').trim()
+  return s.length > n ? s.slice(0, n - 1) + '…' : s
 }
 
 /** 一眼看得懂的一句话：「[3]」「「加载完成」」「back」「https://…」 */
@@ -129,7 +129,7 @@ function hintOf(name, a = {}) {
     const sel = a[p ? `${p}Selector` : 'selector']
     if (sel) return short(sel, 30)
     const text = a[p ? `${p}Text` : 'text']
-    if (text) return `「${short(text, 20)}」`
+    if (text) return t('res.hint.quoted', { text: short(text, 20) })
     const x = a[p ? `${p}X` : 'x']
     const y = a[p ? `${p}Y` : 'y']
     return x !== undefined && y !== undefined ? `(${x}, ${y})` : ''
@@ -140,14 +140,20 @@ function hintOf(name, a = {}) {
     case 'browser_click': return el()
     case 'browser_input':
       // 只记字数：这句会显示在扩展弹窗的「最近动作」里，打的可能是密码
-      return a.action === 'type' ? `打字 ${String(a.text ?? '').length} 字${a.ref != null || a.selector ? ` → ${el()}` : ''}`
-        : a.action === 'key' ? `按键 ${a.key || ''}`
+      return a.action === 'type'
+        ? t('res.hint.typing', { n: String(a.text ?? '').length }) + (a.ref != null || a.selector ? ` → ${el()}` : '')
+        : a.action === 'key' ? t('res.hint.key', { key: a.key || '' })
           : `${a.action} ${el()}`.trim()
     case 'browser_nav': return (a.action && a.action !== 'go') ? a.action : short(a.url, 50)
-    case 'browser_screenshot': return a.mode === 'element' ? `元素 ${el()}` : a.mode || ''
+    case 'browser_screenshot': return a.mode === 'element' ? t('res.hint.element', { el: el() }) : a.mode || ''
     case 'browser_eval': return short(a.expression, 40)
     case 'browser_wait':
-      return `${a.gone ? '等消失 ' : ''}${a.text ? `「${short(a.text, 20)}」` : a.url ? `网址 ${short(a.url, 30)}` : short(a.selector, 30)}`
+      return (
+        (a.gone ? t('res.hint.waitGone') : '') +
+        (a.text
+          ? t('res.hint.quoted', { text: short(a.text, 20) })
+          : a.url ? t('res.hint.url', { url: short(a.url, 30) }) : short(a.selector, 30))
+      )
     case 'browser_dialog': return a.action || ''
     case 'browser_drag': return `${el('from')} → ${el('to')}`
     case 'browser_download': return a.ref !== undefined && a.ref !== null ? `[${a.ref}]` : short(a.selector || a.url || '', 50)
@@ -280,9 +286,9 @@ function forgetTab(id) {
  * 再挑不在 DSH 干活窗口里的。老扩展不给 focused / agentWindow，就退回第一个 active（以前的做法）。
  */
 function userTab(tabs) {
-  return tabs.find((t) => t.active && t.focused) ||
-    tabs.find((t) => t.active && !t.agentWindow) ||
-    tabs.find((t) => t.active)
+  return tabs.find((tb) => tb.active && tb.focused) ||
+    tabs.find((tb) => tb.active && !tb.agentWindow) ||
+    tabs.find((tb) => tb.active)
 }
 
 async function resolveTab(tab) {
@@ -300,7 +306,7 @@ async function resolveTab(tab) {
   }
   const id = currentTab.get(sessionKey())
   if (id !== undefined) {
-    if ((await call('tabs')).some((t) => t.id === id)) return id
+    if ((await call('tabs')).some((tb) => tb.id === id)) return id
     currentTab.delete(sessionKey())
   }
   throw new Error(t('err.noTab'))
@@ -396,7 +402,7 @@ const withCursor = (extra = {}) => {
   return script ? { ...extra, script } : extra
 }
 
-const clip = (s, n = 6000) => (s.length > n ? s.slice(0, n) + `\n…（截断，全文 ${s.length} 字）` : s)
+const clip = (s, n = 6000) => (s.length > n ? s.slice(0, n) + t('res.read.truncated', { n: s.length }) : s)
 
 /** DSH 的会话投影服务（读会话现在的工作目录用）；apply 里 inject 到了才有 */
 let projections = null
@@ -501,7 +507,7 @@ const shotRefs = new Map()
 export function apply(ctx, config) {
   // 工具描述是写进模型上下文的那一层，注册那一刻就得是最终语言：
   // config.locale 给 en / ru，缺省或认不出就是 zh（见 i18n/index.js）。
-  t = createT(config && config.locale)
+  t = setLocale(config && config.locale)
   trace(`apply 被调用（locale: ${normalizeLocale(config && config.locale)}）`)
 
   // 一次性安装：宿主 + native 注册自动落地，用户只剩把扩展装进 Chrome（加载已解压，或商店装）
@@ -572,36 +578,38 @@ export function apply(ctx, config) {
           case 'list': {
             const tabs = await call('tabs')
             const mine = userTab(tabs)
-            const lines = tabs.map((t) =>
-              `${t === mine ? '*' : ' '} ${String(t.id).padStart(5)} ${(t.title || '').slice(0, 50)} — ${t.url.slice(0, 80)}${t.agentWindow ? '（DSH 干活窗口）' : ''}`)
-            const text = lines.join('\n') || '(没有标签页)'
-            return { text: lines.length ? `${text}\n（* = 用户正在看的页）` : text }
+            const lines = tabs.map((tb) =>
+              `${tb === mine ? '*' : ' '} ${String(tb.id).padStart(5)} ${(tb.title || '').slice(0, 50)} — ${tb.url.slice(0, 80)}${tb.agentWindow ? t('res.tabs.agentWindow') : ''}`)
+            const text = lines.join('\n') || t('res.tabs.empty')
+            return { text: lines.length ? `${text}\n${t('res.tabs.footnote')}` : text }
           }
           case 'find': {
             const q = String(args.query || '').toLowerCase()
-            const tabs = (await call('tabs')).filter((t) =>
-              (t.title || '').toLowerCase().includes(q) || (t.url || '').toLowerCase().includes(q))
+            const tabs = (await call('tabs')).filter((tb) =>
+              (tb.title || '').toLowerCase().includes(q) || (tb.url || '').toLowerCase().includes(q))
             return {
-              text: tabs.map((t) => `${String(t.id).padStart(5)} ${t.title} — ${t.url}`).join('\n') || '(没有匹配的标签页)',
+              text:
+                tabs.map((tb) => `${String(tb.id).padStart(5)} ${tb.title} — ${tb.url}`).join('\n') ||
+                t('res.tabs.noMatch'),
             }
           }
           case 'open': {
             if (!args.url) throw new Error(t('err.openNeedsUrl'))
             const r = await call('open', { url: args.url })
             rememberTab(r.tabId)
-            const where = r.window === 'agent' ? '（在单独的 DSH 干活窗口里，后台打开，没打扰用户正在看的页）' : '（后台标签页）'
-            return { text: `已打开标签页 ${r.tabId}${where}：${r.url}` }
+            const where = r.window === 'agent' ? t('res.tabs.agentHint') : t('res.tabs.background')
+            return { text: t('res.tabs.opened', { id: r.tabId, where, url: r.url }) }
           }
           case 'close': {
             const tabId = await resolveTab(args.tab)
             await call('close', { tabId })
             forgetTab(tabId)
-            return { text: `已关闭标签页 ${tabId}` }
+            return { text: t('res.tabs.closed', { id: tabId }) }
           }
           case 'activate': {
             const tabId = await resolveTab(args.tab)
             await call('activate', { tabId })
-            return { text: `已切到标签页 ${tabId}` }
+            return { text: t('res.tabs.activated', { id: tabId }) }
           }
           default:
             throw new Error(t('err.unknownAction', { action: args.action }))
@@ -636,11 +644,11 @@ export function apply(ctx, config) {
             if (!args.selector) {
               for (const f of await frameTexts(call, tabId).catch(() => [])) {
                 text += f.cross
-                  ? `\n\n[iframe] ${f.src}（跨站框架，读不到里面的字：browser_screenshot 看）`
+                  ? t('res.read.iframeCross', { src: f.src })
                   : f.text ? `\n\n[iframe] ${f.src}\n${f.text}` : ''
               }
             }
-            return { text: clip(text.trim(), limit) || '(页面没有可见文字)' }
+            return { text: clip(text.trim(), limit) || t('res.read.noText') }
           }
           case 'html': {
             const r = await call('html', { tabId, selector: args.selector || 'body', limit })
@@ -649,13 +657,22 @@ export function apply(ctx, config) {
           case 'attr': {
             if (!args.selector || !args.name) throw new Error(t('err.attrNeeds'))
             const r = await call('attr', { tabId, selector: args.selector, name: args.name })
-            return { text: r.value === null ? '(没有这个属性)' : String(r.value) }
+            return { text: r.value === null ? t('res.read.noAttr') : String(r.value) }
           }
           case 'info': {
             const r = await call('info', { tabId })
-            const v = r.viewport ? ` | 视口 ${r.viewport.w}×${r.viewport.h}，已滚动 ${r.viewport.scrollY}px` : ''
+            const v = r.viewport
+              ? t('res.read.viewport', {
+                  w: r.viewport.w,
+                  h: r.viewport.h,
+                  scrollYpx: `${r.viewport.scrollY}px`,
+                })
+              : ''
             const d = r.pendingDialog
-              ? `\n⚠️ 有 ${r.pendingDialog.type} 弹窗挡着：「${r.pendingDialog.message}」——先调 browser_dialog 放行`
+              ? t('res.read.dialog', {
+                  type: r.pendingDialog.type,
+                  message: r.pendingDialog.message,
+                })
               : ''
             return { text: `${r.title}\n${r.url}${v}${d}` }
           }
@@ -688,23 +705,48 @@ export function apply(ctx, config) {
           const el = await locate(call, tabId, args.ref, { wantPoint: count > 1 })
           if (el.selector && count === 1) {
             const r = await call('clickEl', { tabId, selector: el.selector, ...withCursor(), chooser: true })
-            return { text: `已点击 [${args.ref}] ${r.target.tag}「${r.target.text}」@ (${r.x}, ${r.y})${chooserNote(r, tabId)}` }
+            return {
+              text: t('res.click.atRef', {
+                ref: args.ref,
+                tag: r.target.tag,
+                text: r.target.text,
+                x: r.x,
+                y: r.y,
+              }) + chooserNote(r, tabId),
+            }
           }
           // shadow DOM / iframe 里的元素（选择器够不着），或者要双击：按坐标点
           const r = await call('click', { tabId, x: el.x, y: el.y, clickCount: count, ...withCursor(), chooser: true })
-          return { text: `已点击 [${args.ref}] ${el.tag}「${el.text}」@ (${r.x}, ${r.y})${count > 1 ? ` ×${count}` : ''}${chooserNote(r, tabId)}` }
+          return {
+            text:
+              (count > 1
+                ? t('res.click.atRefCount', {
+                    ref: args.ref,
+                    tag: el.tag,
+                    text: el.text,
+                    x: r.x,
+                    y: r.y,
+                    count,
+                  })
+                : t('res.click.atRef', { ref: args.ref, tag: el.tag, text: el.text, x: r.x, y: r.y })) +
+              chooserNote(r, tabId),
+          }
         }
         if (args.selector) {
           const r = await call('clickEl', { tabId, selector: args.selector, ...withCursor(), chooser: true })
-          return { text: `已点击 ${r.target.tag}「${r.target.text}」@ (${r.x}, ${r.y})${chooserNote(r, tabId)}` }
+          return {
+            text: t('res.click.byTag', { tag: r.target.tag, text: r.target.text, x: r.x, y: r.y }) + chooserNote(r, tabId),
+          }
         }
         if (args.text) {
           const r = await call('clickText', { tabId, text: args.text, exact: false, ...withCursor(), chooser: true })
-          return { text: `已点击 ${r.target.tag}「${r.target.text}」@ (${r.x}, ${r.y})${chooserNote(r, tabId)}` }
+          return {
+            text: t('res.click.byTag', { tag: r.target.tag, text: r.target.text, x: r.x, y: r.y }) + chooserNote(r, tabId),
+          }
         }
         if (args.x !== undefined && args.y !== undefined) {
           const r = await call('click', { tabId, x: Number(args.x), y: Number(args.y), clickCount: count, ...withCursor(), chooser: true })
-          return { text: `已点击坐标 (${r.x}, ${r.y})${chooserNote(r, tabId)}` }
+          return { text: t('res.click.atCoords', { x: r.x, y: r.y }) + chooserNote(r, tabId) }
         }
         throw new Error(t('err.clickNeeds'))
       },
@@ -751,25 +793,29 @@ export function apply(ctx, config) {
             if (el && el.shadow) {
               await call('click', { tabId, x: el.x, y: el.y, ...withCursor() })
               const r = await call('type', { tabId, text: args.text })
-              return { text: `已输入 ${r.typed} 个字符（先点了 ${target}）` }
+              return { text: t('res.input.typedAfterClick', { n: r.typed, target }) }
             }
             const r = await call('type', { tabId, text: args.text, selector: selector || undefined, ...withCursor() })
-            return { text: `已输入 ${r.typed} 个字符${selector ? `（先聚焦了 ${target}）` : ''}` }
+            return {
+              text:
+                t('res.input.typed', { n: r.typed }) +
+                (selector ? t('res.input.typedAfterFocus', { target }) : ''),
+            }
           }
           case 'key': {
             if (!args.key) throw new Error(t('err.keyNeedsKey'))
             const r = await call('key', { tabId, key: args.key, chooser: true })
-            return { text: `已按键 ${args.key}${chooserNote(r, tabId)}` }
+            return { text: t('res.input.pressedKey', { key: args.key }) + chooserNote(r, tabId) }
           }
           case 'select': {
             if (!selector && !el) throw new Error(t('err.selectNeedsTarget'))
             if (args.value === undefined) throw new Error(t('err.selectNeedsValue'))
             if (el && el.shadow) {
               const r = await selectInPage(call, tabId, args.ref, args.value)
-              return { text: `已选择「${r.label}」(${r.value})` }
+              return { text: t('res.input.selected', { label: r.label, value: r.value }) }
             }
             const r = await call('select', { tabId, selector, value: args.value })
-            return { text: `已选择「${r.label}」(${r.value})` }
+            return { text: t('res.input.selected', { label: r.label, value: r.value }) }
           }
           case 'upload': {
             if (!args.files?.length) throw new Error(t('err.uploadNeedsFiles'))
@@ -784,17 +830,17 @@ export function apply(ctx, config) {
               if (!r || !r.chooser) throw new Error(t('err.uploadNeedsTarget'))
               // 等回包时这个会话可能又点开了新框（存了新 id）：只删这次用掉的
               if (chooserIds.get(key) === used) chooserIds.delete(key)
-              return { text: `已把 ${r.files.length} 个文件交给页面刚才打开的选文件框` }
+              return { text: t('res.input.uploadedChooser', { n: r.files.length }) }
             }
             let r
             try { r = await call('upload', { tabId, selector, files }) } catch (e) { throw uploadError(e) }
-            return { text: `已把 ${r.files.length} 个文件塞进 ${target}` }
+            return { text: t('res.input.uploaded', { n: r.files.length, target }) }
           }
           case 'focus': {
             if (!selector && !el) throw new Error(t('err.focusNeedsTarget'))
             if (el && el.shadow) await focusShadow(call, tabId, args.ref)
             else await call('focus', { tabId, selector })
-            return { text: `已聚焦 ${target}` }
+            return { text: t('res.input.focused', { target }) }
           }
           case 'hover': {
             const byPoint = el && el.shadow
@@ -808,11 +854,21 @@ export function apply(ctx, config) {
               selector: byPoint ? undefined : selector || undefined,
               ...withCursor(),
             })
-            return { text: `已悬停 @ (${r.x}, ${r.y})${r.target ? ` ${r.target.tag}「${r.target.text}」` : ''}` }
+            return {
+              text:
+                t('res.input.hovered', { x: r.x, y: r.y }) +
+                (r.target ? t('res.input.hoveredEl', { tag: r.target.tag, text: r.target.text }) : ''),
+            }
           }
           case 'scroll': {
             const r = await call('scroll', { tabId, deltaY: Number(args.dy ?? 600), deltaX: Number(args.dx || 0) })
-            return { text: `已滚动 ${r.deltaY}px，当前 scrollY=${r.scrollY} / 页高 ${r.pageHeight}` }
+            return {
+              text: t('res.input.scrolled', {
+                dy: `${r.deltaY}px`,
+                scrollY: r.scrollY,
+                pageHeight: r.pageHeight,
+              }),
+            }
           }
           default:
             throw new Error(t('err.unknownAction', { action: args.action }))
@@ -840,14 +896,31 @@ export function apply(ctx, config) {
         if (action === 'go') {
           if (!args.url) throw new Error(t('err.navNeedsUrl'))
           const r = await call('nav', { tabId, url: args.url, wait: true }, 60000)
-          const late = r.loaded === false ? '（页面还没加载完，需要的话 browser_wait 等一下）' : ''
-          return { text: `已到 ${r.url}${r.title ? ` — ${r.title}` : ''}${late}` }
+          const late = r.loaded === false ? t('res.nav.late') : ''
+          return {
+            text: t('res.nav.go', {
+              url: r.url,
+              title: r.title ? t('res.nav.subtitle', { title: r.title }) : '',
+              late,
+            }),
+          }
         }
         const r = await historyNav(call, tabId, action)
-        const verb = { back: '已后退到', forward: '已前进到', reload: '已刷新' }[action]
+        const verb = {
+          back: t('res.nav.back'),
+          forward: t('res.nav.forward'),
+          reload: t('res.nav.reload'),
+        }[action]
         if (!verb) throw new Error(t('err.unknownAction', { action }))
-        const late = r.done ? '' : '（页面还没加载完，需要的话 browser_wait 等一下）'
-        return { text: `${verb} ${r.url}${r.title ? ` — ${r.title}` : ''}${late}` }
+        const late = r.done ? '' : t('res.nav.late')
+        return {
+          text: t('res.nav.history', {
+            verb,
+            url: r.url,
+            title: r.title ? t('res.nav.subtitle', { title: r.title }) : '',
+            late,
+          }),
+        }
       },
     }),
 
@@ -910,7 +983,7 @@ export function apply(ctx, config) {
 
         const buf = Buffer.from(r.data, 'base64')
         const where = `${r.title || ''} ${r.url || ''}`.trim()
-        const note = `截图（${args.mode}，${Math.round(buf.length / 1024)}KB）— ${where}`
+        const note = t('res.shot.note', { mode: args.mode, size: `${Math.round(buf.length / 1024)}KB`, where })
 
         const attachments = ctx.get('attachments')
         if (attachments) {
@@ -932,7 +1005,7 @@ export function apply(ctx, config) {
         }
         const file = path.join(os.tmpdir(), `dsh-shot-${Date.now()}.${String(args.format || '').toLowerCase().startsWith('j') ? 'jpg' : 'png'}`)
         fs.writeFileSync(file, buf)
-        return { text: `${note}\n（附件库不可用，已存到 ${file}，可以用 read_image 看）`, token: '' }
+        return { text: note + t('res.shot.saved', { file }), token: '' }
       },
     }),
 
@@ -976,7 +1049,15 @@ export function apply(ctx, config) {
         if (given !== 1) throw new Error(t('err.waitNeedsOne'))
         if (has(args.selector) && !args.gone) {
           const r = await call('waitFor', { tabId, selector: args.selector, timeoutMs, visible: true }, timeoutMs + 15000)
-          return { text: `等到了 ${args.selector} @ (${r.x}, ${r.y})「${r.text}」，用了 ${r.waitedMs}ms` }
+          return {
+            text: t('res.wait.selector', {
+              sel: args.selector,
+              x: r.x,
+              y: r.y,
+              text: r.text,
+              ms: `${r.waitedMs}ms`,
+            }),
+          }
         }
         const text = await waitUntil(call, tabId, {
           selector: has(args.selector) ? args.selector : undefined,
@@ -1003,7 +1084,7 @@ export function apply(ctx, config) {
       async execute(args) {
         const tabId = await resolveTab(args.tab)
         const r = await call('dialog', { tabId, action: args.action, text: args.text || undefined })
-        return { text: r.action === 'accept' ? '已放行弹窗' : '已取消弹窗' }
+        return { text: r.action === 'accept' ? t('res.dialog.accepted') : t('res.dialog.dismissed') }
       },
     }),
 
@@ -1089,10 +1170,15 @@ export function apply(ctx, config) {
           dir,
         })
         const type = (r.type || '').split(';')[0].trim()
-        const warn = /^text\/html/i.test(type)
-          ? '\n⚠️ 下到的是网页（text/html），多半是登录页或「下载即将开始」的中转页，不是文件本身：打开看看，或者换成真正的文件链接'
-          : ''
-        return { text: `已下载：${r.file}（${humanSize(r.size)}${type ? `，${type}` : ''}）${warn}` }
+        const warn = /^text\/html/i.test(type) ? t('res.dl.warnHtml') : ''
+        return {
+          text: t('res.dl.done', {
+            file: r.file,
+            size: humanSize(r.size),
+            type: type ? t('res.dl.typePart', { type }) : '',
+            warn,
+          }),
+        }
       },
     }),
 
@@ -1147,7 +1233,7 @@ export function apply(ctx, config) {
       throw e
     }
   }
-  trace(`已注册 ${tools.length} 个工具: ${tools.map((t) => t.name).join(', ')}`)
+  trace(`已注册 ${tools.length} 个工具: ${tools.map((x) => x.name).join(', ')}`)
 
   // 上游报「图片太多」时卸掉最老的几张再重试（见 image-guard.js）
   installImageGuard(ctx, trace)

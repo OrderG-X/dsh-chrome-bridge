@@ -24,6 +24,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { execFile, execFileSync, spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { tt } from './i18n/index.js'
 
 export const HOST_NAME = 'com.dsh.bridge'
 export const EXT_DIR_NAME = 'dsh-bridge-extension'
@@ -289,7 +290,7 @@ export function listStaleHosts(hostDir, keep) {
         const lines = String(stdout).split(/\r?\n/).map((l) => l.trim())
         // 查询本身跑完了才会先打 OK：没有这行就是半路出错了
         const total = (/^HOSTS\t(\d+)$/m.exec(lines.join('\n')) || [])[1]
-        if (!lines.includes('OK') || total === undefined) return reject(new Error('列进程没有跑完'))
+        if (!lines.includes('OK') || total === undefined) return reject(new Error(tt('err.setupProcList')))
         resolve(lines.map((l) => l.split('\t'))
           .filter(([pid, cmd, t]) => /^\d+$/.test(pid) && /^\d+$/.test(cmd || '') && /^\d+$/.test(t || ''))
           .map(([pid, cmd, t, exe]) => ({ pid: Number(pid), cmd: Number(cmd), created: Number(t), hosts: Number(total), exe })))
@@ -560,48 +561,53 @@ export function ensureInstalled(options = {}) {
  */
 export function installHint(home = os.homedir()) {
   const s = installState(home)
-  if (!s.vendor) return '插件包里没有自带宿主：请重新用 release tarball 安装本插件（README 的 Install 一节）。'
+  if (!s.vendor) return tt('setup.noVendor')
   if (!PLATFORMS.includes(process.platform)) {
-    return `浏览器桥暂不支持 ${process.platform}（只支持 macOS、Windows、Linux）。`
+    return tt('setup.unsupportedPlatform', { platform: process.platform })
   }
+  const mark = (ok) => (ok ? ' ✅' : ' ❌')
   if (!s.hostCopied || !s.registered) {
     return [
-      '宿主或 native messaging 注册没写成功（多半是权限问题）：',
-      `宿主目录 ${s.hostDir}${s.hostCopied ? ' ✅' : ' ❌'}`,
-      `注册${process.platform === 'win32' ? '（注册表 + 文件）' : '文件'} ${s.nmFile}${s.registered ? ' ✅' : ' ❌'}`,
-      '重启一次 DSH 会再试一遍；还不行就在 GitHub 提 issue。',
+      tt('setup.regHead'),
+      tt('setup.regHostDir', { dir: s.hostDir, mark: mark(s.hostCopied) }),
+      tt('setup.regNm', {
+        kind: process.platform === 'win32' ? tt('setup.nmKindWin') : tt('setup.nmKindFile'),
+        file: s.nmFile,
+        mark: mark(s.registered),
+      }),
+      tt('setup.regTail'),
     ].join('\n')
   }
   let launchErr = ''
   try { launchErr = fs.readFileSync(path.join(s.hostDir, 'launch-error.txt'), 'utf8').trim() } catch {}
-  if (launchErr) return `Chrome 拉起宿主失败：${launchErr}\n重启 DSH 之后，完全退出 Chrome 再打开一次。`
+  if (launchErr) return tt('setup.launchFailed', { err: launchErr })
   if (s.store) {
     return [
-      `扩展已经从 Chrome 应用商店装好了（DSH Bridge ${s.store.version}），但宿主没连上：`,
-      '1. 确认 Chrome 开着',
-      '2. chrome://extensions 里 DSH Bridge 是启用状态',
-      '3. 还不行就完全退出 Chrome 再打开一次',
-      '不用再「加载已解压」；宿主和 native 注册已经自动装好了。',
+      tt('setup.storeHead', { version: s.store.version }),
+      tt('setup.storeStep1'),
+      tt('setup.storeStep2'),
+      tt('setup.storeStep3'),
+      tt('setup.storeTail'),
     ].join('\n')
   }
   return [
-    '浏览器桥还差最后一步（一次性），两种装法选一个：',
-    '· 最省事：从 Chrome 应用商店装 DSH Bridge（不用开发者模式）：',
-    `  ${STORE_URL}`,
-    '· 或者加载已解压的扩展：',
-    '  1. Chrome 打开 chrome://extensions',
-    '  2. 右上角打开「开发者模式」',
-    `  3. 点「加载已解压的扩展程序」，${PASTE_TIP[process.platform] || PASTE_TIP.darwin}，选这个文件夹：`,
-    `     ${s.extDir}`,
-    '装好后回到这里重试；宿主和 native 注册已经自动装好了，不用再跑任何脚本。',
+    tt('setup.manualHead'),
+    tt('setup.manualStore'),
+    tt('setup.storeUrl', { url: STORE_URL }),
+    tt('setup.manualUnpacked'),
+    tt('setup.manualStep1'),
+    tt('setup.manualStep2'),
+    tt('setup.manualStep3', { paste: pasteTip() }),
+    tt('setup.manualDir', { dir: s.extDir }),
+    tt('setup.manualTail'),
   ].join('\n')
 }
 
-/** 文件框里怎么直接粘路径 */
-const PASTE_TIP = {
-  darwin: '在文件框里按 ⌘⇧G、粘贴、回车',
-  win32: '把路径粘进文件框顶上的地址栏、回车',
-  linux: '在文件框里按 Ctrl+L、粘贴、回车',
+/** 文件框里怎么直接粘路径（按当前语言取，别在模块加载时就定死） */
+function pasteTip() {
+  if (process.platform === 'win32') return tt('setup.pasteWin')
+  if (process.platform === 'linux') return tt('setup.pasteLinux')
+  return tt('setup.pasteDarwin')
 }
 
 /** Chrome 在不在跑（决定要不要顺手把设置页打开）。 */
@@ -632,7 +638,7 @@ function openInChrome(url, { background = false } = {}) {
     return
   }
   const bin = chromeBin()
-  if (!bin) throw new Error('找不到 Chrome')
+  if (!bin) throw new Error(tt('err.chromeNotFound'))
   spawn(bin, [url], { detached: true, stdio: 'ignore', windowsHide: false }).unref()
 }
 
